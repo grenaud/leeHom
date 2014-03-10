@@ -9,7 +9,7 @@ QUESTIONS :
 About
 ----------------------
 
-leeHom is programs for the maximum likelihood reconstruction of ancient DNA (the binary is mergeTrimReadsBAM)
+leeHom is a program for the maximum likelihood reconstruction of ancient DNA (the binary is mergeTrimReadsBAM)
 
 
 Downloading:
