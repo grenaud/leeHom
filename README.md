@@ -22,12 +22,12 @@ Installation:
 
 1) Build Bamtools first:
 
-   cd bamtools/   
-   mkdir build/   
-   cd build/
-   cmake ..
-   make 
-   cd ../..
+    cd bamtools/   
+    mkdir build/   
+    cd build/
+    cmake ..
+    make 
+    cd ../..
 
 2) Build the submodules and main code by typing :
 
