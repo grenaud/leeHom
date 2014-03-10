@@ -15,37 +15,23 @@ TEST DATA:
 
 A small test set of 50,000 ancient DNA sequences from the Altai Neandertal can be found here:
 
-    testData/ancientDNA/rawAncientDNA.bam
+    testData/rawAncientDNA.bam
 
 
 To launch the reconstruction program for this test data set, use the following command :
 
-    src/mergeTrimReadsBAM -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG --ancientdna  -o testData/ancientDNA/reconsAncientDNA.bam testData/ancientDNA/rawAncientDNA.bam
-
-for fastq data:
-
-    src/mergeTrimReadsBAM -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG --ancientdna  -fq1 testData/ancientDNA/rawAncientDNA.f1.gz -fq2 testData/ancientDNA/rawAncientDNA.f2.gz -fqo testData/ancientDNA/outfq
-
+    src/mergeTrimReadsBAM -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG --ancientdna  -o testData/reconsAncientDNA.bam testData/rawAncientDNA.bam
 
 The reconstructed ancient DNA fragments will be in 
 
-    testData/ancientDNA/reconsAncientDNA.bam
+    testData/reconsAncientDNA.bam
+
+for fastq data:
+
+    src/mergeTrimReadsBAM -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG --ancientdna  -fq1 testData/rawAncientDNA.f1.gz -fq2 testData/rawAncientDNA.f2.gz -fqo testData/outfq
 
 
-Running on fastq input:
-    The conversion from/to BAM and fastq can be done via the BCL2BAM2FASTQ/ which is cloned along with this repository. You need to CD to that directory and build this repository.
 
-    For paired-end data, transform to BAM:
-      BCL2BAM2FASTQ/fastq2bam/fastq2bam
-
-    For single-end data, transform to BAM:
-      BCL2BAM2FASTQ/fastq2bam/fastSingle2bam
-
-    You can also get fastq as output using:
-      BCL2BAM2FASTQ/bam2fastq/bam2fastq
-
-    You can always pipe to and from if you want to 
-    ../BCL2BAM2FASTQ/fastq2bam/fastq2bam  -o /dev/stdout  testData/ancientDNA/rawAncientDNA.f1.gz testData/ancientDNA/rawAncientDNA.f2.gz |  src/mergeTrimReadsBAM -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG --ancientdna  -o /dev/stdout  /dev/stdin | ../BCL2BAM2FASTQ/bam2fastq/bam2fastq /dev/stdin  testData/ancientDNA/outfastq
 
 
 QUESTIONS :
