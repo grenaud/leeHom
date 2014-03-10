@@ -1,0 +1,52 @@
+==========================================================
+  Maximum likelihood reconstruction of ancient DNA fragments
+==========================================================
+
+INSTALLATION INSTRUCTIONS:
+Read the main readme file (README.md). If certain submodules fail to build it is fine as long as you built the ones in pipeline/ correctly.
+
+RUNNING THE PROGRAM:
+To launch the program simply build the aLib package and type:
+
+    pipeline/mergeTrimReadsBAM
+
+
+TEST DATA:
+
+A small test set of 50,000 ancient DNA sequences from the Altai Neandertal can be found here:
+
+    testData/ancientDNA/rawAncientDNA.bam
+
+
+To launch the reconstruction program for this test data set, use the following command :
+
+    src/mergeTrimReadsBAM -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG --ancientdna  -o testData/ancientDNA/reconsAncientDNA.bam testData/ancientDNA/rawAncientDNA.bam
+
+for fastq data:
+
+    src/mergeTrimReadsBAM -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG --ancientdna  -fq1 testData/ancientDNA/rawAncientDNA.f1.gz -fq2 testData/ancientDNA/rawAncientDNA.f2.gz -fqo testData/ancientDNA/outfq
+
+
+The reconstructed ancient DNA fragments will be in 
+
+    testData/ancientDNA/reconsAncientDNA.bam
+
+
+Running on fastq input:
+    The conversion from/to BAM and fastq can be done via the BCL2BAM2FASTQ/ which is cloned along with this repository. You need to CD to that directory and build this repository.
+
+    For paired-end data, transform to BAM:
+      BCL2BAM2FASTQ/fastq2bam/fastq2bam
+
+    For single-end data, transform to BAM:
+      BCL2BAM2FASTQ/fastq2bam/fastSingle2bam
+
+    You can also get fastq as output using:
+      BCL2BAM2FASTQ/bam2fastq/bam2fastq
+
+    You can always pipe to and from if you want to 
+    ../BCL2BAM2FASTQ/fastq2bam/fastq2bam  -o /dev/stdout  testData/ancientDNA/rawAncientDNA.f1.gz testData/ancientDNA/rawAncientDNA.f2.gz |  src/mergeTrimReadsBAM -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG --ancientdna  -o /dev/stdout  /dev/stdin | ../BCL2BAM2FASTQ/bam2fastq/bam2fastq /dev/stdin  testData/ancientDNA/outfastq
+
+
+QUESTIONS :
+   gabriel [dot] reno [ at sign ] gmail.com
