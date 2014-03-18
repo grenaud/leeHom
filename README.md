@@ -27,6 +27,9 @@ or
 Installation:
 ----------------------
 
+Make sure you have cmake installed, if not install it by 
+typing "apt-get install cmake" for Ubuntu for example.
+
 1) Build Bamtools first:
 
     cd bamtools/   
@@ -47,7 +50,7 @@ running the program:
 
 To launch the program simply type:
 
-    src/mergeTrimReadsBAM
+    src/leeHom
 
 Test data:
 ----------------------
@@ -58,7 +61,7 @@ A small test set of 50,000 ancient DNA sequences from the Altai Neandertal can b
 
 To launch the reconstruction program for this test data set, use the following command :
 
-    src/mergeTrimReadsBAM -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG --ancientdna  -o testData/reconsAncientDNA.bam testData/rawAncientDNA.bam
+    src/leeHom -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG --ancientdna  -o testData/reconsAncientDNA.bam testData/rawAncientDNA.bam
 
 The reconstructed ancient DNA fragments will be in 
 
@@ -66,6 +69,6 @@ The reconstructed ancient DNA fragments will be in
 
 for fastq data:
 
-    src/mergeTrimReadsBAM -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG --ancientdna  -fq1 testData/rawAncientDNA.f1.gz -fq2 testData/rawAncientDNA.f2.gz -fqo testData/outfq
+    src/leeHom -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG --ancientdna  -fq1 testData/rawAncientDNA.f1.gz -fq2 testData/rawAncientDNA.f2.gz -fqo testData/outfq
 
 The output files will have the  testData/outfq* prefix.

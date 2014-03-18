@@ -114,9 +114,10 @@ int main (int argc, char *argv[]) {
     bool singleEndModeFQ=true;
 
     const string usage=string(string(argv[0])+
-			      "This program takes a BAM where each mate are consecutive and\ntrims and merges reads\n"+
-			      +" [options] BAMfile"+"\n"+
 			      
+			      " [options] BAMfile"+"\n"+
+			      "\nThis program takes an unaligned BAM where mates are consecutive\nor fastq files and trims and merges reads\n"+
+
 			      "\n\tYou can specify a unaligned bam file or one or two fastq :\n"+			      
 			      "\t\t"+"-fq1" +"\t\t"+"First fastq"+"\n"+
 			      "\t\t"+"-fq2" +"\t\t"+"Second  fastq file (for paired-end)"+"\n"+
@@ -412,14 +413,14 @@ int main (int argc, char *argv[]) {
 		
 		if(result.code != ' '){ //keys or chimeras
 		    onereadgroup.pairr2f<<"@"<<def2s<<"/2" <<endl <<*(fo2->getSeq())<<endl<<"+"<<endl <<*(fo2->getID())<<endl;
-		    onereadgroup.pairr1f<<"@"<<def1s<<"/2" <<endl <<*(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getID())<<endl;
+		    onereadgroup.pairr1f<<"@"<<def1s<<"/1" <<endl <<*(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getID())<<endl;
 		    continue;
 		}else{
 		        if(result.sequence != ""){ //new sequence
-			    onereadgroup.single<<"@"<<def1s<<"/2" <<endl << result.sequence<<endl<<"+"<<endl <<result.quality<<endl;    	    
+			    onereadgroup.single<<"@"<<def1s<<"" <<endl << result.sequence<<endl<<"+"<<endl <<result.quality<<endl;    	    
 			}else{ //keep as is
 			    onereadgroup.pairr2<<"@"<<def2s<<"/2" <<endl <<*(fo2->getSeq())<<endl<<"+"<<endl <<*(fo2->getID())<<endl;
-			    onereadgroup.pairr1<<"@"<<def1s<<"/2" <<endl <<*(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getID())<<endl;
+			    onereadgroup.pairr1<<"@"<<def1s<<"/1" <<endl <<*(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getID())<<endl;
 			    
 
 			}
@@ -431,14 +432,14 @@ int main (int argc, char *argv[]) {
 		merged result=mtr.process_SR(*(fo1->getSeq()),*(fo1->getQual()));
 		if(result.code != ' '){ //either chimera or missing key
 
-		    onereadgroup.singlef<<"@"<<*(fo1->getSeq())<<"/2" <<endl << *(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
+		    onereadgroup.singlef<<"@"<<*(fo1->getSeq())<<"" <<endl << *(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
 		    continue;
 		}
 
 		if(result.sequence != ""){ //new sequence
-		    onereadgroup.single<<"@"<<*(fo1->getSeq())<<"/2" <<endl << result.sequence<<endl<<"+"<<endl <<result.quality<<endl;
+		    onereadgroup.single<<"@"<<*(fo1->getSeq())<<"" <<endl << result.sequence<<endl<<"+"<<endl <<result.quality<<endl;
 		}else{
-		    onereadgroup.single<<"@"<<*(fo1->getSeq())<<"/2" <<endl << *(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
+		    onereadgroup.single<<"@"<<*(fo1->getSeq())<<"" <<endl << *(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
 		}
 
 	    }
