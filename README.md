@@ -1,5 +1,5 @@
 ==========================================================
-  Maximum likelihood reconstruction of ancient DNA fragments
+  Bayesian reconstruction of ancient DNA fragments
 ==========================================================
 
 QUESTIONS :
@@ -9,7 +9,7 @@ QUESTIONS :
 About
 ----------------------
 
-leeHom is a program for the maximum likelihood reconstruction of ancient DNA (the binary is mergeTrimReadsBAM)
+leeHom is a program for the Bayesian reconstruction of ancient DNA (the binary is mergeTrimReadsBAM)
 
 
 Downloading:
