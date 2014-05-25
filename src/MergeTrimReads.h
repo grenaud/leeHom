@@ -175,6 +175,7 @@ class MergeTrimReads{
 				     int &    logLikelihoodTotalIdx,
 				     double & sndlogLikelihoodTotal,
 				     int &    sndlogLikelihoodTotalIdx);
+
     void computeBestLikelihoodPairedEnd(const string &      read1,
 					const vector<int> & qualv1,
 					    
@@ -258,6 +259,25 @@ class MergeTrimReads{
 
     string reportSingleLine();
     string reportMultipleLines();
+
+
+
+    int getCountall();
+    int getCountfkey();
+    int getCountmerged();
+    int getCountmergedoverlap();
+    int getCounttrimmed();
+    int getCountnothing();
+    int getCountchimera();
+
+
+    void incrementCountall();
+    void incrementCountfkey();
+    void incrementCountmerged();
+    void incrementCountmergedoverlap();
+    void incrementCounttrimmed();
+    void incrementCountnothing();
+    void incrementCountchimera();
 
 };
 #endif

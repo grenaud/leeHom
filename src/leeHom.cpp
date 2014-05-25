@@ -136,13 +136,13 @@ int main (int argc, char *argv[]) {
 			      
 			      "\n\t"+"Paired End merging/Single Read trimming  options"+"\n"+
 			      "\t\t"+"You can specify either:"+"\n"+
-			      "\t\t"+"--ancientdna"+"\t\t\t\t"+"ancient DNA (default "+boolStringify(ancientDNA)+")"+"\n"+
-			      "\t\t"+"            "+"\t\t\t\t"+" Allows for partial overlap"+"\n"+
-			      "\t\t"+"or if you know your size length distribution:"+"\n"+
-			      "\t\t"+"--loc"+"\t\t\t\t"+"Location for lognormal dist. (default none)"+"\n"+
-			      "\t\t"+"--scale"+"\t\t\t\t"+"Scale for lognormal dist. (default none)"+"\n"+
-			      "\t\t\t\t\t\t\tGood for merging ancient DNA reads into a single sequence\n\n"
-			      "\t\t"+"--keepOrig"+"\t\t\t\t"+"Write original reads if they are trimmed or merged  (default "+boolStringify(keepOrig)+")"+"\n"+
+			      "\t\t\t"+"--ancientdna"+"\t\t\t"+"ancient DNA (default "+boolStringify(ancientDNA)+")"+"\n"+
+			      "\t\t"+"            "+"\t\t\t\t"+"this allows for partial overlap"+"\n"+
+			      "\n\t\t"+"or if you know your size length distribution:"+"\n"+
+			      "\t\t\t"+"--loc"+"\t\t\t\t"+"Location for lognormal dist. (default none)"+"\n"+
+			      "\t\t\t"+"--scale"+"\t\t\t\t"+"Scale for lognormal dist. (default none)"+"\n"+
+			      //			      "\t\t\t\t\t\t\tGood for merging ancient DNA reads into a single sequence\n\n"
+			      "\n\t\t"+"--keepOrig"+"\t\t\t\t"+"Write original reads if they are trimmed or merged  (default "+boolStringify(keepOrig)+")"+"\n"+
 			      "\t\t\t\t\t\t\tSuch reads will be marked as PCR duplicates\n\n"
 			      "\t\t"+"-f , --adapterFirstRead" +"\t\t\t"+"Adapter that is observed after the forward read (def. Multiplex: "+options_adapter_F_BAM.substr(0,30)+")"+"\n"+
 			      "\t\t"+"-s , --adapterSecondRead" +"\t\t"+"Adapter that is observed after the reverse read (def. Multiplex: "+options_adapter_S_BAM.substr(0,30)+")"+"\n"+
@@ -409,16 +409,40 @@ int main (int argc, char *argv[]) {
 		}
 
 		merged result=	mtr.process_PE(*(fo1->getSeq()),*(fo1->getQual()),
-					   *(fo2->getSeq()),*(fo2->getQual()));
-		
+					       *(fo2->getSeq()),*(fo2->getQual()));
+
+		mtr.incrementCountall();
+
 		if(result.code != ' '){ //keys or chimeras
+
+		    if(result.code == 'K'){
+			mtr.incrementCountfkey();
+		    }else{
+			if(result.code == 'D'){
+			    mtr.incrementCountchimera();
+			}else{
+			    cerr << "leehom: Wrong return code =\""<<result.code<<"\""<<endl;
+			    exit(1);
+			}
+		    }
+			
 		    onereadgroup.pairr2f<<"@"<<def2s<<"/2" <<endl <<*(fo2->getSeq())<<endl<<"+"<<endl <<*(fo2->getID())<<endl;
 		    onereadgroup.pairr1f<<"@"<<def1s<<"/1" <<endl <<*(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getID())<<endl;
 		    continue;
+
 		}else{
-		        if(result.sequence != ""){ //new sequence
+		        if(result.sequence != ""){ //new sequence			    
 			    onereadgroup.single<<"@"<<def1s<<"" <<endl << result.sequence<<endl<<"+"<<endl <<result.quality<<endl;    	    
+
+			    if( result.sequence.length() > max(fo1->getSeq()->length(),fo2->getSeq()->length()) ){
+				mtr.incrementCountmergedoverlap();
+			    }else{
+				mtr.incrementCountmerged();			  
+			    }
+
 			}else{ //keep as is
+			    mtr.incrementCountnothing();
+
 			    onereadgroup.pairr2<<"@"<<def2s<<"/2" <<endl <<*(fo2->getSeq())<<endl<<"+"<<endl <<*(fo2->getID())<<endl;
 			    onereadgroup.pairr1<<"@"<<def1s<<"/1" <<endl <<*(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getID())<<endl;
 			    
@@ -430,15 +454,30 @@ int main (int argc, char *argv[]) {
 		
 		
 		merged result=mtr.process_SR(*(fo1->getSeq()),*(fo1->getQual()));
+		mtr.incrementCountall();
+
 		if(result.code != ' '){ //either chimera or missing key
+
+		    if(result.code == 'K'){
+			mtr.incrementCountfkey();
+		    }else{
+			if(result.code == 'D'){
+			    mtr.incrementCountchimera();
+			}else{
+			    cerr << "leehom: Wrong return code =\""<<result.code<<"\""<<endl;
+			    exit(1);
+			}
+		    }
 
 		    onereadgroup.singlef<<"@"<<*(fo1->getSeq())<<"" <<endl << *(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
 		    continue;
 		}
 
 		if(result.sequence != ""){ //new sequence
+		    mtr.incrementCounttrimmed();
 		    onereadgroup.single<<"@"<<*(fo1->getSeq())<<"" <<endl << result.sequence<<endl<<"+"<<endl <<result.quality<<endl;
 		}else{
+		    mtr.incrementCountnothing();
 		    onereadgroup.single<<"@"<<*(fo1->getSeq())<<"" <<endl << *(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
 		}
 
@@ -469,9 +508,9 @@ int main (int argc, char *argv[]) {
 	    onereadgroup.pairr2f.close();
 	}
     
-
-    }else{//fastq
-
+	//fastq
+    }else{
+	//else BAM
 
 
 	//  initMerge();
@@ -622,24 +661,24 @@ int main (int argc, char *argv[]) {
 	reader.Close();
 	writer.Close();
 
-	cerr <<mtr.reportSingleLine()<<endl;
 
-	if(printLog){
-	    ofstream fileLog;
-	    fileLog.open(logFileName.c_str());
+    } //else BAM
 
-	    if (fileLog.is_open()){
-		fileLog <<mtr.reportMultipleLines() <<endl;
 
-	    }else{
-		cerr << "Unable to print to file "<<logFileName<<endl;
-	    }
-	    fileLog.close();
+    cerr <<mtr.reportSingleLine()<<endl;
+
+    if(printLog){
+	ofstream fileLog;
+	fileLog.open(logFileName.c_str());
+
+	if (fileLog.is_open()){
+	    fileLog <<mtr.reportMultipleLines() <<endl;
+
+	}else{
+	    cerr << "Unable to print to file "<<logFileName<<endl;
 	}
-
+	fileLog.close();
     }
-
-
     return 0;
 }
 

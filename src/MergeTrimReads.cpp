@@ -983,6 +983,7 @@ inline bool MergeTrimReads::checkChimera(const string & read1,
 
     for(unsigned int indexChimera=0;indexChimera<adapter_chimeras.size();indexChimera++){
 	
+	
 	if( detectChimera( read1 , qualv1 , adapter_chimeras[indexChimera], 0 )  > logLikelihoodTotal ){
 	    toReturn.code    ='D';
 	    toReturn.sequence="";
@@ -2134,7 +2135,6 @@ bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
 
 
 
-//! Processes the reads for single-end reads 
 /*!
   This subroutine will call process_SR() on the sequence and return a new BamALignment object
   corresponding to the potentially trimmed sequence.
@@ -2257,3 +2257,24 @@ string MergeTrimReads::reportMultipleLines(){
 	    "Adapter dimers/chimeras " +stringify(count_chimera)+       "\t"+stringify(100.0*double(count_chimera)       /double(count_all))+"%\n"+
 	"Failed Key "              +stringify(count_fkey)+          "\t"+stringify(100.0*double(count_fkey)          /double(count_all))+"%\n";
 }
+
+
+
+
+
+int MergeTrimReads::getCountall(){            return count_all; }
+int MergeTrimReads::getCountfkey(){           return count_fkey; }
+int MergeTrimReads::getCountmerged(){         return count_merged; }
+int MergeTrimReads::getCountmergedoverlap(){  return count_merged_overlap; }
+int MergeTrimReads::getCounttrimmed(){        return count_trimmed; }
+int MergeTrimReads::getCountnothing(){        return count_nothing; }
+int MergeTrimReads::getCountchimera(){        return count_chimera; }
+
+
+void MergeTrimReads::incrementCountall(){             count_all++;            }
+void MergeTrimReads::incrementCountfkey(){            count_fkey++;           }
+void MergeTrimReads::incrementCountmerged(){          count_merged++;         }
+void MergeTrimReads::incrementCountmergedoverlap(){   count_merged_overlap++; }
+void MergeTrimReads::incrementCounttrimmed(){         count_trimmed++;        }
+void MergeTrimReads::incrementCountnothing(){         count_nothing++;        }
+void MergeTrimReads::incrementCountchimera(){         count_chimera++;        }
