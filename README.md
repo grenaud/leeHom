@@ -104,6 +104,12 @@ You can use a file descriptor for each. For example if they are stored as FASTA:
 src/leeHom -f `cat /mydata/forward.fa |tail -n+2  |tr -d "\n"` -s `cat /mydata/reverse.fa |tail -n+2  |tr -d "\n"`
 
 
+How do I get the sequence of the adapters ?
+-----------
+
+Contact your sequencing center or core and ask them to send you the sequence of the sequencing adapters. They should be known in advance since, currently, leehom cannot infer the sequence but uses this information as a prior. 
+
+
 Does my BAM file have to be in a specific order ?
 -----------
 
