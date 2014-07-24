@@ -5,7 +5,7 @@
 // #define DEBUGSR
 
 // #define DEBUGADAPT
-// #define DEBUGOVERLAP
+//#define DEBUGOVERLAP
 // // //#define DEBUGTOTALOV
 // // #define DEBUGPARTIALOV
 // // #define CONSBASEPROB
@@ -619,7 +619,7 @@ inline double MergeTrimReads::detectChimera(const string      & read,
 						     
   \param read1 Actual bases of the first read 
   \param qual1 Quality scores associated with the first read
-  \param read2 Actual bases of the second read 
+  \param read2 Actual bases of the second read that were previously reverse complemented
   \param qual2 Quality scores associated with the second read
 
   \param maxLengthForPair pre-computed maximum length of read1 and read2
@@ -643,11 +643,13 @@ inline double MergeTrimReads::measureOverlap(const string      & read1,
 #endif
 
     int i1=0; //start index read 1
-    int i2=maxLengthForPair-offsetRead;
+    int i2=int(read2.size())-int(offsetRead);
     double likelihoodMatch=0.0;
-
+    
     for(int i=0;i<int(offsetRead);i++){
-	
+
+
+	//Both have characters
 	if(     i1<int(read1.size()) && 
 		i2<int(read2.size()) && 
 		i2>=0){
@@ -675,7 +677,8 @@ inline double MergeTrimReads::measureOverlap(const string      & read1,
 	    continue;
 	}
 
-	
+
+	//Only read1 has characters
 	if( i1<int(read1.size()) ){
 
 #ifdef DEBUGOVERLAP
@@ -692,6 +695,7 @@ inline double MergeTrimReads::measureOverlap(const string      & read1,
 	    continue;
 	}
 
+	//only read2 has characters
 	if( i2<int(read2.size()) && 
 	    i2>=0 ){
 		
@@ -707,13 +711,25 @@ inline double MergeTrimReads::measureOverlap(const string      & read1,
 	    continue;
 	}
 
-	cerr<<"Wrong state"<<endl;
+
+	//none have characters, can occur while comparing strings for partial overlap for strings with different lengths
+#ifdef DEBUGOVERLAP
+	comparedread1+="-";
+	comparedread2+="-";
+#endif
+	likelihoodMatch  += likeRandomMatch; 
+	    
+	i1++;
+	i2++;
+	continue;
+	    
+	cerr<<"Wrong state measureOverlap()"<<i<<"\t"<<i1<<"\t"<<i2<<endl;
 	exit(1);
 	    
     }	
 	
 
-#ifdef DEBUGOVERLAP
+#ifdef DEBUGOVERLAP   
     cerr<<"comparedread1 "<<comparedread1<<endl;
     cerr<<"comparedread2 "<<comparedread2<<endl;
     cerr<<"result        "<<likelihoodMatch<<endl;
@@ -1311,7 +1327,7 @@ inline void MergeTrimReads::computeConsensusPairedEnd( const string & read1,
 
 	
 	int i1=0; //start index read 1
-	int i2=maxLengthForPair-logLikelihoodTotalIdx;
+	int i2=int(read2_rev.size())-int(logLikelihoodTotalIdx);
 
 	string        newSeq  = "";
 	vector<int>   newQual ;
@@ -1364,7 +1380,7 @@ inline void MergeTrimReads::computeConsensusPairedEnd( const string & read1,
 		continue;
 	    }
 
-	    cerr<<"Wrong state"<<endl;
+	    cerr<<"Wrong state in computeBestLikelihoodPairedEnd()"<<endl;
 	    exit(1);
 	    
 	}
@@ -1529,6 +1545,26 @@ merged MergeTrimReads::process_SR(string  read1,
 */
 merged MergeTrimReads::process_PE( string  read1,  string  qual1,
 				   string  read2,  string  qual2){
+
+    // //read1 is larger, N pad the second
+    // if(read1.size() > read2.size() ){
+
+    // 	for(int i=0;i< ( int(read1.size()) - int(read2.size()));i++){
+    // 	    read2+="N";
+    // 	    qual2+="#";
+    // 	}
+    // }
+
+    // //read2 is larger, N pad the first
+    // if(read1.size() < read2.size() ){
+
+    // 	for(int i=0;i< ( int(read2.size()) - int(read1.size()));i++){
+    // 	    read1+="N";
+    // 	    qual1+="#";
+    // 	}
+
+    // }
+
 
 
     merged toReturn;

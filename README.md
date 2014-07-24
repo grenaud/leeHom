@@ -17,11 +17,14 @@ Downloading:
 
 Go to https://github.com/grenaud/leeHom and either:
 
-1) Download ZIP 
+1) Do a "git clone --recursive https://github.com/grenaud/leeHom.git"
 
-or
+or 
 
-2) Do a "git clone --recursive https://github.com/grenaud/leeHom.git"
+2) Download ZIP and download manually the submodules
+
+
+
 
 
 Installation:
