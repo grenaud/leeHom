@@ -1546,24 +1546,6 @@ merged MergeTrimReads::process_SR(string  read1,
 merged MergeTrimReads::process_PE( string  read1,  string  qual1,
 				   string  read2,  string  qual2){
 
-    // //read1 is larger, N pad the second
-    // if(read1.size() > read2.size() ){
-
-    // 	for(int i=0;i< ( int(read1.size()) - int(read2.size()));i++){
-    // 	    read2+="N";
-    // 	    qual2+="#";
-    // 	}
-    // }
-
-    // //read2 is larger, N pad the first
-    // if(read1.size() < read2.size() ){
-
-    // 	for(int i=0;i< ( int(read2.size()) - int(read1.size()));i++){
-    // 	    read1+="N";
-    // 	    qual1+="#";
-    // 	}
-
-    // }
 
 
 
