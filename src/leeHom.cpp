@@ -426,8 +426,8 @@ int main (int argc, char *argv[]) {
 			}
 		    }
 			
-		    onereadgroup.pairr2f<<"@"<<def2s<<"/2" <<endl <<*(fo2->getSeq())<<endl<<"+"<<endl <<*(fo2->getID())<<endl;
-		    onereadgroup.pairr1f<<"@"<<def1s<<"/1" <<endl <<*(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getID())<<endl;
+		    onereadgroup.pairr2f<<"@"<<def2s<<"/2" <<endl <<*(fo2->getSeq())<<endl<<"+"<<endl <<*(fo2->getQual())<<endl;
+		    onereadgroup.pairr1f<<"@"<<def1s<<"/1" <<endl <<*(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
 		    continue;
 
 		}else{
@@ -443,8 +443,8 @@ int main (int argc, char *argv[]) {
 			}else{ //keep as is
 			    mtr.incrementCountnothing();
 
-			    onereadgroup.pairr2<<"@"<<def2s<<"/2" <<endl <<*(fo2->getSeq())<<endl<<"+"<<endl <<*(fo2->getID())<<endl;
-			    onereadgroup.pairr1<<"@"<<def1s<<"/1" <<endl <<*(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getID())<<endl;
+			    onereadgroup.pairr2<<"@"<<def2s<<"/2" <<endl <<*(fo2->getSeq())<<endl<<"+"<<endl <<*(fo2->getQual())<<endl;
+			    onereadgroup.pairr1<<"@"<<def1s<<"/1" <<endl <<*(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
 			    
 
 			}

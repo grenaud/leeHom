@@ -12,7 +12,7 @@
 
 //#define DEBUGPR
 // #define DEBUGSCORE
-
+//#define CONSENSUSCALL
 
 
 const long double PI  = atanl(1.0L)*4;   
@@ -1351,6 +1351,10 @@ inline void MergeTrimReads::computeConsensusPairedEnd( const string & read1,
 		baseQual RT    = cons_base_prob(b1,b2);
 		newSeq         +=  RT.base ;
 		newQual.push_back( RT.qual );
+
+#ifdef CONSENSUSCALL
+		cout<<newSeq.size()<<"\t"<<RT.base<<"\t"<<RT.qual<<endl;
+#endif		
 
 		i1++;
 		i2++;
