@@ -332,6 +332,16 @@ int main (int argc, char *argv[]) {
 
 	if(singleEndModeFQ){
 	    fqp1 = new FastQParser (fastqfile1);
+
+	    string outdirs   = fastqoutfile+".fq.gz";
+	    string outdirsf  = fastqoutfile+".fail.fq.gz";
+
+	    onereadgroup.single.open(outdirs.c_str(), ios::out);
+	    onereadgroup.singlef.open(outdirsf.c_str(), ios::out);
+
+	    if(!onereadgroup.single.good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
+	    if(!onereadgroup.singlef.good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
+
 	    
 	}else{
 	    fqp1 = new FastQParser (fastqfile1);
@@ -345,20 +355,21 @@ int main (int argc, char *argv[]) {
 	    string outdir1f  = fastqoutfile+"_r1.fail.fq.gz";
 	    string outdir2f  = fastqoutfile+"_r2.fail.fq.gz";
 
-	    if(singleEndModeFQ){
-		onereadgroup.single.open(outdirs.c_str(), ios::out);
+	    onereadgroup.single.open(outdirs.c_str(), ios::out);
+	    onereadgroup.pairr1.open(outdir1.c_str(), ios::out);
+	    onereadgroup.pairr2.open(outdir2.c_str(), ios::out);
 
-		onereadgroup.singlef.open(outdirsf.c_str(), ios::out);
+	    onereadgroup.singlef.open(outdirsf.c_str(), ios::out);
+	    onereadgroup.pairr1f.open(outdir1f.c_str(), ios::out);
+	    onereadgroup.pairr2f.open(outdir2f.c_str(), ios::out);
 
-	    }else{
-		onereadgroup.single.open(outdirs.c_str(), ios::out);
-		onereadgroup.pairr1.open(outdir1.c_str(), ios::out);
-		onereadgroup.pairr2.open(outdir2.c_str(), ios::out);
-
-		onereadgroup.singlef.open(outdirsf.c_str(), ios::out);
-		onereadgroup.pairr1f.open(outdir1f.c_str(), ios::out);
-		onereadgroup.pairr2f.open(outdir2f.c_str(), ios::out);
-	    }
+	    if(!onereadgroup.single.good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
+	    if(!onereadgroup.pairr1.good()){       cerr<<"Cannot write to file "<<outdir1<<endl; return 1; }
+	    if(!onereadgroup.pairr2.good()){       cerr<<"Cannot write to file "<<outdir2<<endl; return 1; }
+	    
+	    if(!onereadgroup.singlef.good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
+	    if(!onereadgroup.pairr1f.good()){      cerr<<"Cannot write to file "<<outdir1f<<endl; return 1; }
+	    if(!onereadgroup.pairr2f.good()){      cerr<<"Cannot write to file "<<outdir2f<<endl; return 1; }
 	    
 	}
 
@@ -469,16 +480,16 @@ int main (int argc, char *argv[]) {
 			}
 		    }
 
-		    onereadgroup.singlef<<"@"<<*(fo1->getSeq())<<"" <<endl << *(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
+		    onereadgroup.singlef<<""<<*(fo1->getID())<<"" <<endl << *(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
 		    continue;
 		}
 
 		if(result.sequence != ""){ //new sequence
 		    mtr.incrementCounttrimmed();
-		    onereadgroup.single<<"@"<<*(fo1->getSeq())<<"" <<endl << result.sequence<<endl<<"+"<<endl <<result.quality<<endl;
+		    onereadgroup.single<<""<<*(fo1->getID())<<"" <<endl << result.sequence<<endl<<"+"<<endl <<result.quality<<endl;
 		}else{
 		    mtr.incrementCountnothing();
-		    onereadgroup.single<<"@"<<*(fo1->getSeq())<<"" <<endl << *(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
+		    onereadgroup.single<<""<<*(fo1->getID())<<"" <<endl << *(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
 		}
 
 	    }
@@ -494,8 +505,8 @@ int main (int argc, char *argv[]) {
 	}
 
 	if(singleEndModeFQ){
-	    onereadgroup.single.close();
 
+	    onereadgroup.single.close();
 	    onereadgroup.singlef.close();
 	    
 	}else{
