@@ -121,7 +121,7 @@ int main (int argc, char *argv[]) {
 			      "\n\tYou can specify a unaligned bam file or one or two fastq :\n"+			      
 			      "\t\t"+"-fq1" +"\t\t"+"First fastq"+"\n"+
 			      "\t\t"+"-fq2" +"\t\t"+"Second  fastq file (for paired-end)"+"\n"+
-			      "\t\t"+"-fq0" +"\t\t"+"Output fastq prefix"+"\n\n"+
+			      "\t\t"+"-fqo" +"\t\t"+"Output fastq prefix"+"\n\n"+
 			      //"\t"+"-p , --PIPE"+"\n\t\t"+"Read BAM from and write it to PIPE"+"\n"+
 			      "\t"+"-o , --outfile" +"\t\t"+"Output (BAM format)."+"\n"+
 
