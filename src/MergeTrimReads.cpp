@@ -1788,10 +1788,10 @@ bool MergeTrimReads::set_extra_flag( BamAlignment &al, int32_t f )
 MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, const string& chimera_,
 				const string& key1_, const string& key2_,
 				int trimcutoff_,bool allowMissing_,
-				bool ancientDNA_,double location_,double scale_,bool useDist_):
+				bool ancientDNA_,double location_,double scale_,bool useDist_,int qualOffset):
     //bool mergeoverlap_) : 
     min_length (5),
-    qualOffset (33),
+    qualOffset (qualOffset),
 
 
 

@@ -112,6 +112,7 @@ int main (int argc, char *argv[]) {
     string fastqfile2   = "";
     string fastqoutfile = "";
     bool singleEndModeFQ=true;
+    int    qualOffset     = 33;
 
     const string usage=string(string(argv[0])+
 			      
@@ -133,6 +134,7 @@ int main (int argc, char *argv[]) {
 			      "\t"+"--aligned" +"\t\t"+"Allow reads to be aligned (default "+boolStringify(allowAligned)+")"+"\n"+
 			      "\t"+"-v , --verbose" +"\t\t"+"Turn all messages on (default "+boolStringify(verbose)+")"+"\n"+
 			      "\t"+"--log [log file]" +"\t"+"Print a tally of merged reads to this log file (default only to stderr)"+"\n"+
+			      "\t"+"--phred64" +"\t\t"+"Use PHRED 64 as the offset for QC scores (default : PHRED33)"+"\n"+
 			      
 			      "\n\t"+"Paired End merging/Single Read trimming  options"+"\n"+
 			      "\t\t"+"You can specify either:"+"\n"+
@@ -212,6 +214,10 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(string(argv[i]) == "--phred64"  ){
+	    qualOffset=64;
+	    continue;
+	}
 
 
 	if(strcmp(argv[i],"-o") == 0 || strcmp(argv[i],"--outfile") == 0 ){
@@ -309,7 +315,7 @@ int main (int argc, char *argv[]) {
     
     MergeTrimReads mtr (adapter_F,adapter_S,adapter_chimera,
 			key1,key2,
-			trimCutoff,allowMissing,ancientDNA,location,scale,useDist);
+			trimCutoff,allowMissing,ancientDNA,location,scale,useDist,qualOffset);
 
     fqwriters onereadgroup;
 

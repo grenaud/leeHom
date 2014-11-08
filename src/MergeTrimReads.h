@@ -242,7 +242,7 @@ class MergeTrimReads{
  public:
     MergeTrimReads (const string& forward_, const string& reverse_, const string& chimera_,
 		    const string& key1_="", const string& key2_="",
-		    int trimcutoff_=1,bool allowMissing_=false,bool ancientDNA_=false,double location_=-1.0,double scale_=-1.0,bool useDist_=false);
+		    int trimcutoff_=1,bool allowMissing_=false,bool ancientDNA_=false,double location_=-1.0,double scale_=-1.0,bool useDist_=false,int    qualOffset=33);
 
     MergeTrimReads(const MergeTrimReads & other);
     ~MergeTrimReads();
