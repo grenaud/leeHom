@@ -1,3 +1,4 @@
+
 #ifndef MergeTrimReads_h
 #define MergeTrimReads_h
 

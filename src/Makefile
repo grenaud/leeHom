@@ -3,23 +3,25 @@ BAMTOOLS= $(realpath ../bamtools/)
 LIBGAB= $(realpath ../libgab/)
 
 
-
+CXX      = g++ # -g
 CXXFLAGS+= -O3 -Wall -I${BAMTOOLS}/include/ -I${LIBGAB} -I${LIBGAB}/gzstream/  
-LDLIBS+= ${BAMTOOLS}/lib/libbamtools.a ${LIBGAB}/utils.o -lm -lz
+LDFLAGS  = -lm -lz  -lpthread 
+LDLIBS+=  ${BAMTOOLS}/build/src/utils/CMakeFiles/BamTools-utils.dir/*cpp.o ${BAMTOOLS}/lib/libbamtools.a ${LIBGAB}/utils.o 
 
 
-all:    leeHom
+all:    leeHom leeHomMulti
 
 %.o: %.cpp
 	${CXX} -c ${CXXFLAGS} $^ 
 
 
-leeHom: leeHom.o  MergeTrimReads.o ${LIBGAB}/PutProgramInHeader.o ${LIBGAB}/gzstream/libgzstream.a ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o
+leeHom: leeHom.o  MergeTrimReads.o ${LIBGAB}/PutProgramInHeader.o ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o  ${LIBGAB}/gzstream/libgzstream.a
 	${CXX} $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 
-
+leeHomMulti: leeHomMulti.o  MergeTrimReads.o ${LIBGAB}/PutProgramInHeader.o  ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o ${LIBGAB}/gzstream/libgzstream.a
+	${CXX} $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 clean:
-	rm -f leeHom *.o
+	rm -f leeHom leeHomMulti *.o
 

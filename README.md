@@ -55,6 +55,10 @@ To launch the program simply type:
 
     src/leeHom
 
+or for if you have a multi-core machine, you can use them using the -t option in the following multi-threaded program:
+
+    src/leeHomMulti
+
 
 Interpreting the log messages
 ----------------------
