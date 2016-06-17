@@ -16,11 +16,11 @@ all:    leeHom leeHomMulti
 
 
 leeHom: leeHom.o  MergeTrimReads.o ${LIBGAB}/PutProgramInHeader.o ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o  ${LIBGAB}/gzstream/libgzstream.a
-	${CXX} $(LDFLAGS) -o $@ $^ $(LDLIBS)
+	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS)
 
 
 leeHomMulti: leeHomMulti.o  MergeTrimReads.o ${LIBGAB}/PutProgramInHeader.o  ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o ${LIBGAB}/gzstream/libgzstream.a
-	${CXX} $(LDFLAGS) -o $@ $^ $(LDLIBS)
+	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS) 
 
 clean:
 	rm -f leeHom leeHomMulti *.o
