@@ -312,6 +312,17 @@ int main (int argc, char *argv[]) {
 	    return 1;	    
 	}
     }
+
+    if(key != ""){
+	size_t found=key.find(",");
+	if (found == string::npos){ //single end reads
+	    key1=key;
+	    key2="";
+	} else{                     //paired-end
+	    key1=key.substr(0,found);
+	    key2=key.substr(found+1,key.length()-found+1);
+	}
+    }
     
     MergeTrimReads mtr (adapter_F,adapter_S,adapter_chimera,
 			key1,key2,
@@ -535,16 +546,6 @@ int main (int argc, char *argv[]) {
 	// 			  adapter_S,
 	// 			  adapter_chimera);
 	//     set_options(trimCutoff,allowMissing,mergeoverlap);
-	if(key != ""){
-	    size_t found=key.find(",");
-	    if (found == string::npos){ //single end reads
-		key1=key;
-		key2="";
-	    } else{                     //paired-end
-		key1=key.substr(0,found);
-		key2=key.substr(found+1,key.length()-found+1);
-	    }
-	}
 
 
 

@@ -1492,6 +1492,17 @@ int main (int argc, char *argv[]) {
 	}
     }
     
+    if(key != ""){
+	size_t found=key.find(",");
+	if (found == string::npos){ //single end reads
+	    key1=key;
+	    key2="";
+	} else{                     //paired-end
+	    key1=key.substr(0,found);
+	    key2=key.substr(found+1,key.length()-found+1);
+	}
+    }
+
     mtr = new MergeTrimReads(adapter_F,adapter_S,adapter_chimera,
 			     key1,key2,
 			     trimCutoff,allowMissing,ancientDNA,location,scale,useDist,qualOffset);
@@ -1939,16 +1950,6 @@ int main (int argc, char *argv[]) {
     	//end fastq
     }else{
 	//else BAM
-	if(key != ""){
-	    size_t found=key.find(",");
-	    if (found == string::npos){ //single end reads
-		key1=key;
-		key2="";
-	    } else{                     //paired-end
-		key1=key.substr(0,found);
-		key2=key.substr(found+1,key.length()-found+1);
-	    }
-	}
 
 	if( bamFileOUT == ""  ){
 	    cerr<<"The output must be a be specified, exiting"<<endl;
