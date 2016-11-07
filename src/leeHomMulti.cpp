@@ -228,7 +228,7 @@ int    timeThreadSleep = 1;
 bool      readDataDone = false;
 unsigned int sizeChunk = 5000;
 
-int numberOfThreads;
+int numberOfThreads=1;
 
 map<unsigned int, int>       threadID2Rank;
 
