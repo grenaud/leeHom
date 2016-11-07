@@ -315,13 +315,14 @@ int main (int argc, char *argv[]) {
 
     if(key != ""){
 	size_t found=key.find(",");
+
 	if (found == string::npos){ //single end reads
 	    key1=key;
 	    key2="";
 	} else{                     //paired-end
 	    key1=key.substr(0,found);
 	    key2=key.substr(found+1,key.length()-found+1);
-	}
+	}	
     }
     
     MergeTrimReads mtr (adapter_F,adapter_S,adapter_chimera,
@@ -601,7 +602,7 @@ int main (int argc, char *argv[]) {
     
 	while ( reader.GetNextAlignment(al) ) {
 
-	
+
 	    if(al.IsMapped() || al.HasTag("NM") || al.HasTag("MD")  ){
 		if(!allowAligned){
 		    cerr << "Reads should not be aligned" << endl;
@@ -621,8 +622,10 @@ int main (int argc, char *argv[]) {
 		if(al.IsPaired() && 
 		   !al2Null){
 
+
 		    bool  result =  mtr.processPair(al,al2);
-		
+
+
 		    if( result ){//was merged
 			BamAlignment orig;
 			BamAlignment orig2;

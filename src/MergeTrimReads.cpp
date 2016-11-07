@@ -945,24 +945,29 @@ inline bool MergeTrimReads::checkKeyPairedEnd(string & read1,
 	    (options_allowMissing && (edits(read1.substr(0,len_key1),keys0) == 1) && (read2.substr(0,len_key2) == keys1)) || //1mm in first key
 	    (options_allowMissing && (read1.substr(0,len_key1) == keys0) && (edits(read2.substr(0,len_key2),keys1) == 1))
 	    ){ //1mm in second key
-	    read1 = read1.substr(len_key1,read1.size()-len_key1);
 	    qual1 = qual1.substr(len_key1,read1.size()-len_key1);
-	    read2 = read2.substr(len_key2,read2.size()-len_key2);
+	    read1 = read1.substr(len_key1,read1.size()-len_key1);
+
 	    qual2 = qual2.substr(len_key2,read2.size()-len_key2);
+	    read2 = read2.substr(len_key2,read2.size()-len_key2);
+
 	}else{
 	    if(options_allowMissing && 
 	       ( (len_key1>0?(read1.substr(0,len_key1-1) == keys0.substr(1,len_key1-1)):true) && (read2.substr(0,len_key2) == keys1)) ){
+		qual1 = qual1.substr(len_key1-1,read1.size()-(len_key1-1));		
 		read1 = read1.substr(len_key1-1,read1.size()-(len_key1-1));
-		qual1 = qual1.substr(len_key1-1,read1.size()-(len_key1-1));
-		read2 = read2.substr(len_key2,read2.size()-len_key2);
+
 		qual2 = qual2.substr(len_key2,read2.size()-len_key2);
+		read2 = read2.substr(len_key2,read2.size()-len_key2);
+
 	    }else{
 		if(options_allowMissing && 
 		   (read1.substr(0,len_key1) == keys0) && (len_key2>0?(read2.substr(0,len_key2-1) == keys1.substr(1,len_key2-1)):true)){
-		    read1 = read1.substr(len_key1,read1.size()-len_key1);
 		    qual1 = qual1.substr(len_key1,read1.size()-len_key1);
+		    read1 = read1.substr(len_key1,read1.size()-len_key1);
+
+		    qual2 = qual2.substr(len_key2-1,read2.size()-(len_key2-1));
 		    read2 = read2.substr(len_key2-1,read2.size()-(len_key2-1));
-		    qual2 = qual2.substr(len_key2-1,read2.size()-(len_key2-1));		    
 		}else{
 		    toReturn.code    ='K';
 		    toReturn.sequence="";
@@ -1560,6 +1565,7 @@ merged MergeTrimReads::process_PE( string  read1,  string  qual1,
     sanityCheckLength(read1,qual1);
     sanityCheckLength(read2,qual2);
 
+
     if(checkKeyPairedEnd(read1,qual1,read2,qual2,toReturn)){
 	return toReturn;
     }
@@ -1944,11 +1950,11 @@ bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
 	qual2=string(read1.length(),'0');
     }
     
-    // cerr<<"read1 "<<read1<<endl;
-    // cerr<<"read2 "<<read2<<endl;
 
     merged result=process_PE(read1,qual1,
 			     read2,qual2);
+
+
 
     //     if(al.Name == "M00518_0167_000000000-A3Y1J_CH_A2109:1:1101:12584:1649"){
     // 	cerr<<"SEQ #"<<result.sequence<<"#"<<endl;
