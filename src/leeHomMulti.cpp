@@ -852,7 +852,7 @@ void *mainComputationThreadFQ(void * argc){
 	}else{//V single mode below V
 		
 		
-	    merged result=mtr->process_SR(currentChunk->dataToProcess->at(i).s1,currentChunk->dataToProcess->at(i).s2); //*(fo1->getSeq()),*(fo1->getQual()));
+	    merged result=mtr->process_SR(currentChunk->dataToProcess->at(i).s1,currentChunk->dataToProcess->at(i).q1); //*(fo1->getSeq()),*(fo1->getQual()));
 	    mtr->incrementCountall();
 	    toadd.code = result.code;
 	    toadd.paired  =  false;

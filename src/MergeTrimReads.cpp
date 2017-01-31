@@ -1444,6 +1444,7 @@ merged MergeTrimReads::process_SR(string  read1,
     }
     //end check for the key (if needed)
 
+
     sanityCheckLength(read1,qual1);
 
 
@@ -1560,8 +1561,8 @@ merged MergeTrimReads::process_PE( string  read1,  string  qual1,
 
     merged toReturn;
 
-
-
+    
+    
     sanityCheckLength(read1,qual1);
     sanityCheckLength(read2,qual2);
 
