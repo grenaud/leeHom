@@ -4,7 +4,7 @@
 //#define DEBUG2
 // #define DEBUGSR
 
-// #define DEBUGADAPT
+//#define DEBUGADAPT
 //#define DEBUGOVERLAP
 // // //#define DEBUGTOTALOV
 // // #define DEBUGPARTIALOV
@@ -783,10 +783,11 @@ inline double MergeTrimReads::detectAdapter(const string      & read,
 
     unsigned  i=0;
     unsigned  indexRead=offsetRead;
+    double qualSum = 0.0;
 
     while(i<maxIterations){
 	indexRead = i+offsetRead;
-
+	//cerr<<"indexRead "<<indexRead<<endl;
 
 #ifdef DEBUGADAPT
 	comparedread+=read[indexRead];
@@ -807,15 +808,38 @@ inline double MergeTrimReads::detectAdapter(const string      & read,
 	}else{ //mismatch
 	    likelihoodMatch  += likeMismatch[ qual[indexRead] ];
 	}
+	qualSum += qual[indexRead] ;
 
 #ifdef DEBUGADAPT
-	cerr<<"apt "<<i<<"\t"<<likelihoodMatch<<"\tq:"<<qual[indexRead]<<"\t"<<likeMatch[ qual[indexRead] ]<<"\t"<<likeMismatch[ qual[indexRead] ]<<endl;
+	cerr<<"apt "<<i<<"\t"<<likelihoodMatch<<"\tq:"<<qual[indexRead]<<"\t"<<likeMatch[ qual[indexRead] ]<<"\t"<<likeMismatch[ qual[indexRead] ]<<"\t"<<(i*likeRandomMatch)<<endl;
 #endif
 
 	//(*iterations)++;
 	i++;
 
-    }
+
+ 	if( quickMode &&
+	   (i== minComparisonsAdapterForQuickMode) ){
+
+#ifdef DEBUGADAPT
+	    cerr<<"check for break ll="<<likelihoodMatch<<"\trandom="<<(i*likeRandomMatch)<<"\tlogq="<<log10quickModeProbError <<endl;
+#endif
+ 	    
+ 	    if(( (likelihoodMatch - (i*likeRandomMatch)) < log10quickModeProbError )){
+ 		
+ 		double iterationLeft = maxIterations-i;
+
+ 		int qavg = int(qualSum/minComparisonsAdapterForQuickMode); //wrong, terrible hack to get avg qual because they are on a log scale
+ 		//hack: we expect 75% of mismatches and 25% of matches
+ 		likelihoodMatch += iterationLeft*0.75*likeMismatch[ qavg ] + iterationLeft*0.25*likeMatch[ qavg ] ;
+
+ 		indexRead =  (maxIterations-1)+offsetRead;//last iteration
+		//cerr<<"break"<<endl;
+ 		break;
+ 	    }
+ 	}
+
+    }//end while
 
     int extraBases = max(0,int(read.length())-int(indexRead)-1);
 
@@ -1042,7 +1066,8 @@ inline void MergeTrimReads::string2NumericalQualScores(const string & qual,vecto
 	//this nonsense is to make old compilers happy
 	int t2  = int(char( qual[i] ))-qualOffset;
 	int t = max( t2,2);
-	qualv.push_back( t  );
+	//qualv.push_back( t  );
+	qualv[i] =t;
     }
     
 }
@@ -1101,7 +1126,7 @@ inline void MergeTrimReads::computeBestLikelihoodSingle(const string      & read
 #endif
 
 	double logLike=
-	    (double( indexAdapter ) * likeRandomMatch ) //likelihood of remaining bases
+	    (double( indexAdapter ) * likeRandomMatch ) //likelihood of observing the remaining bases, before the adapter
 	    +
 	    detectAdapter( read1 , qualv1 , options_adapter_F,indexAdapter , &matches );
 
@@ -1327,7 +1352,8 @@ inline void MergeTrimReads::computeConsensusPairedEnd( const string & read1,
     //test for merging:
     if( logLikelihoodTotalIdx != -1    &&                       //the status quo is not the most likely
 	//(logLikelihoodTotal/sndlogLikelihoodTotal)      < maxLikelihoodRatio &&
-	( (sndlogLikelihoodTotal - logLikelihoodTotal) < log10(maxLikelihoodRatio) ) &&
+	//( (sndlogLikelihoodTotal - logLikelihoodTotal) < log10(maxLikelihoodRatio) ) &&
+	( (sndlogLikelihoodTotal - logLikelihoodTotal) < log10maxLikelihoodRatio ) &&
 	logLikelihoodTotalMatches >= int(min_overlap_seqs)  ){       //sufficient # of mismatches for partial overlap (artifically to min_overlap_seqs for complete overlap)
 
 	
@@ -1449,7 +1475,9 @@ merged MergeTrimReads::process_SR(string  read1,
 
 
 
-    vector<int> qualv1;
+    //vector<int> qualv1;
+    vector<int> qualv1 (qual1.size(),2);
+
     string2NumericalQualScores(qual1,qualv1);
     
 
@@ -1502,7 +1530,8 @@ merged MergeTrimReads::process_SR(string  read1,
 
 
      if( logLikelihoodTotalIdx != -1 &&
-	 ( (sndlogLikelihoodTotal - logLikelihoodTotal) < log10(maxLikelihoodRatio) )
+	 //( (sndlogLikelihoodTotal - logLikelihoodTotal) < log10(maxLikelihoodRatio) )
+	 ( (sndlogLikelihoodTotal - logLikelihoodTotal) < log10maxLikelihoodRatio )
 	 ){
 	
         read1 = read1.substr(0,logLikelihoodTotalIdx);
@@ -1572,8 +1601,10 @@ merged MergeTrimReads::process_PE( string  read1,  string  qual1,
     }
 
 
-    vector<int> qualv1;
-    vector<int> qualv2;
+    // vector<int> qualv1;
+    // vector<int> qualv2;
+    vector<int> qualv1  (qual1.size(),2);
+    vector<int> qualv2  (qual2.size(),2);
 
     string2NumericalQualScores(qual1,qualv1);
     string2NumericalQualScores(qual2,qualv2);
@@ -1795,7 +1826,7 @@ bool MergeTrimReads::set_extra_flag( BamAlignment &al, int32_t f )
 MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, const string& chimera_,
 				const string& key1_, const string& key2_,
 				int trimcutoff_,bool allowMissing_,
-				bool ancientDNA_,double location_,double scale_,bool useDist_,int qualOffset):
+				bool ancientDNA_,double location_,double scale_,bool useDist_,int qualOffset,bool quickMode_):
     //bool mergeoverlap_) : 
     min_length (5),
     qualOffset (qualOffset),
@@ -1810,7 +1841,10 @@ MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, 
     
     location(location_),
     scale(scale_),
-    useDist(useDist_)
+    useDist(useDist_),
+    quickMode(quickMode_)
+		     
+
  {
      
      initialized = false;
@@ -1819,8 +1853,14 @@ MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, 
      //TODO: the default values should be stored in the config.json file, not here
      max_prob_N = 0.25;
     
-     maxLikelihoodRatio = 1.0/20.0;
-    
+     maxLikelihoodRatio       = 1.0/20.0;
+     log10maxLikelihoodRatio  = log10(maxLikelihoodRatio);
+
+     quickModeProbError       = 1.0 / 100000000;
+     log10quickModeProbError  = log10(quickModeProbError);
+ 
+     minComparisonsAdapterForQuickMode = 8; // minimum number of comparisons for the adapter in quick mode
+
      maxadapter_comp  = 30; /**< maximum number of bases to be compared in the adapter */
      min_overlap_seqs = 10; /**< maximum number that have to match in the case of partial overlap */ 
     

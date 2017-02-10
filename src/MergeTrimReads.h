@@ -43,8 +43,15 @@ typedef struct {
 class MergeTrimReads{
  private:
     //VARIABLES
-    double maxLikelihoodRatio  ;
-    
+
+    double maxLikelihoodRatio       ;
+    double log10maxLikelihoodRatio  ;
+
+    double quickModeProbError       ;
+    double log10quickModeProbError  ;
+    unsigned  minComparisonsAdapterForQuickMode; // minimum number of comparisons for the adapter in quick mode
+
+
     double likelihoodChimera  ;
     double likelihoodAdapterSR ;
     
@@ -239,11 +246,13 @@ class MergeTrimReads{
     double location;
     double scale;
     bool   useDist;
+    bool   quickMode;
+
     //lognormal_distribution<> p;
  public:
     MergeTrimReads (const string& forward_, const string& reverse_, const string& chimera_,
 		    const string& key1_="", const string& key2_="",
-		    int trimcutoff_=1,bool allowMissing_=false,bool ancientDNA_=false,double location_=-1.0,double scale_=-1.0,bool useDist_=false,int    qualOffset=33);
+		    int trimcutoff_=1,bool allowMissing_=false,bool ancientDNA_=false,double location_=-1.0,double scale_=-1.0,bool useDist_=false,int    qualOffset=33,bool quickMode_=false);
 
     MergeTrimReads(const MergeTrimReads & other);
     ~MergeTrimReads();

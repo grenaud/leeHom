@@ -1260,7 +1260,7 @@ int main (int argc, char *argv[]) {
     string fastqoutfile = "";
     bool singleEndModeFQ=true;
     int    qualOffset     = 33;
-
+    bool quickMode=false;
     //int    numberOfThreads   = 1;
 
     const string usage=string(string(argv[0])+
@@ -1280,27 +1280,28 @@ int main (int argc, char *argv[]) {
 
 			      //	"\t"+" , --outprefix" +"\n\t\t"+"Prefix for output files (default '"+outprefix+"')."+"\n"+
 			      //"\t"+" , --SAM" +"\n\t\t"+"Output SAM not BAM."+"\n"+
-			      "\t"+"--aligned" +"\t\t"+"Allow reads to be aligned (default "+boolStringify(allowAligned)+")"+"\n"+
-			      "\t"+"-v , --verbose" +"\t\t"+"Turn all messages on (default "+boolStringify(verbose)+")"+"\n"+
+			      "\t"+"--aligned" +"\t\t"+"Allow reads to be aligned (default "+booleanAsString(allowAligned)+")"+"\n"+
+			      "\t"+"-v , --verbose" +"\t\t"+"Turn all messages on (default "+booleanAsString(verbose)+")"+"\n"+
 			      "\t"+"--log [log file]" +"\t"+"Print a tally of merged reads to this log file (default only to stderr)"+"\n"+
 			      "\t"+"--phred64" +"\t\t"+"Use PHRED 64 as the offset for QC scores (default : PHRED33)"+"\n"+
 			      "\t"+"-t [threads]" +"\t\t"+"Use multiple cores (default : "+stringify(numberOfThreads)+")"+"\n"+
+			      "\t"+"--quick" +"\t\t\t"+"Use shortcuts in the calculations (default : "+booleanAsString(quickMode)+")"+"\n"+
 			      
 			      "\n\t"+"Paired End merging/Single Read trimming  options"+"\n"+
 			      "\t\t"+"You can specify either:"+"\n"+
-			      "\t\t\t"+"--ancientdna"+"\t\t\t"+"ancient DNA (default "+boolStringify(ancientDNA)+")"+"\n"+
+			      "\t\t\t"+"--ancientdna"+"\t\t\t"+"ancient DNA (default "+booleanAsString(ancientDNA)+")"+"\n"+
 			      "\t\t"+"            "+"\t\t\t\t"+"this allows for partial overlap"+"\n"+
 			      "\n\t\t"+"or if you know your size length distribution:"+"\n"+
 			      "\t\t\t"+"--loc"+"\t\t\t\t"+"Location for lognormal dist. (default none)"+"\n"+
 			      "\t\t\t"+"--scale"+"\t\t\t\t"+"Scale for lognormal dist. (default none)"+"\n"+
 			      //			      "\t\t\t\t\t\t\tGood for merging ancient DNA reads into a single sequence\n\n"
-			      "\n\t\t"+"--keepOrig"+"\t\t\t\t"+"Write original reads if they are trimmed or merged  (default "+boolStringify(keepOrig)+")"+"\n"+
+			      "\n\t\t"+"--keepOrig"+"\t\t\t\t"+"Write original reads if they are trimmed or merged  (default "+booleanAsString(keepOrig)+")"+"\n"+
 			      "\t\t\t\t\t\t\tSuch reads will be marked as PCR duplicates\n\n"
 			      "\t\t"+"-f , --adapterFirstRead" +"\t\t\t"+"Adapter that is observed after the forward read (def. Multiplex: "+options_adapter_F_BAM.substr(0,30)+")"+"\n"+
 			      "\t\t"+"-s , --adapterSecondRead" +"\t\t"+"Adapter that is observed after the reverse read (def. Multiplex: "+options_adapter_S_BAM.substr(0,30)+")"+"\n"+
 			      "\t\t"+"-c , --FirstReadChimeraFilter" +"\t\t"+"If the forward read looks like this sequence, the cluster is filtered out.\n\t\t\t\t\t\t\tProvide several sequences separated by comma (def. Multiplex: "+options_adapter_chimera_BAM.substr(0,30)+")"+"\n"+
 			      "\t\t"+"-k , --key"+"\t\t\t\t"+"Key sequence with which each sequence starts. Comma separate for forward and reverse reads. (default '"+key+"')"+"\n"+
-			      "\t\t"+"-i , --allowMissing"+"\t\t\t"+"Allow one base in one key to be missing or wrong. (default "+boolStringify(allowMissing)+")"+"\n"+
+			      "\t\t"+"-i , --allowMissing"+"\t\t\t"+"Allow one base in one key to be missing or wrong. (default "+booleanAsString(allowMissing)+")"+"\n"+
 			      "\t\t"+"-t , --trimCutoff"+"\t\t\t"+"Lowest number of adapter bases to be observed for single Read trimming (default "+stringify(trimCutoff)+")");
 
     if( (argc== 1) ||
@@ -1377,6 +1378,11 @@ int main (int argc, char *argv[]) {
 
 	if(strcmp(argv[i],"-u") == 0  ){
 	    produceUnCompressedBAM=true;
+	    continue;
+	}
+
+	if(strcmp(argv[i],"--quick") == 0  ){
+	    quickMode=true;
 	    continue;
 	}
 
@@ -1505,7 +1511,7 @@ int main (int argc, char *argv[]) {
 
     mtr = new MergeTrimReads(adapter_F,adapter_S,adapter_chimera,
 			     key1,key2,
-			     trimCutoff,allowMissing,ancientDNA,location,scale,useDist,qualOffset);
+			     trimCutoff,allowMissing,ancientDNA,location,scale,useDist,qualOffset,quickMode);
     
     fqwriters onereadgroup;
     if(fastqFormat){
@@ -1540,7 +1546,7 @@ int main (int argc, char *argv[]) {
 
 
 	FastQParser * fqp1;
-	FastQParser * fqp2;
+	FastQParser * fqp2=NULL;
 
 	if(singleEndModeFQ){
 	    fqp1 = new FastQParser (fastqfile1);
@@ -1548,7 +1554,7 @@ int main (int argc, char *argv[]) {
 	    string outdirs   = fastqoutfile+".fq.gz";
 	    string outdirsf  = fastqoutfile+".fail.fq.gz";
 
-	    onereadgroup.single.open(outdirs.c_str(), ios::out);
+	    onereadgroup.single.open(outdirs.c_str(),   ios::out);
 	    onereadgroup.singlef.open(outdirsf.c_str(), ios::out);
 
 	    if(!onereadgroup.single.good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
@@ -1673,7 +1679,9 @@ int main (int argc, char *argv[]) {
 		while(true){
 		    //mutex queue is taken here
 		    if(int(queueDataToprocessFQ.size())>(maxQueueDataToprocessSize)){	  // if queue full
+#ifdef DEBUGSLEEPING
 			int queueSize = int(queueDataToprocessFQ.size());
+#endif
 			//release mutex queue
 			rc = pthread_mutex_unlock(&mutexQueue);
 			checkResults("pthread_mutex_unlock()\n", rc);
@@ -2050,8 +2058,9 @@ int main (int argc, char *argv[]) {
 		while(true){
 		    //mutex queue is taken here
 		    if(int(queueDataToprocess.size())>(maxQueueDataToprocessSize)){	  // if queue full
+#ifdef DEBUGSLEEPING
 			int queueSize = int(queueDataToprocess.size());
-
+#endif
 			//release mutex queue
 			rc = pthread_mutex_unlock(&mutexQueue);
 			checkResults("pthread_mutex_unlock()\n", rc);
