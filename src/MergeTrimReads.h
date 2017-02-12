@@ -104,15 +104,21 @@ class MergeTrimReads{
     double likeMismatch[64];
     double likeMatchProb[64];
     double likeMismatchProb[64];
+
+    double likeAvgRandomBase[64]; //likelihood of 2 base being alike by chance: 0.75*log[mismatch] + 0.25*log[match] at a given qc
+    double likeAvgRandomSequence[64][MAXLENGTHSEQUENCE]; //likelihood of 2 sequences being alike by chance
+    double likeRandomMatchSequence[MAXLENGTHSEQUENCE];    
     
     double likeMatchPair[64][64];
     double likeMismatchPair[64][64];
 
     double probForQual[64];
+
     double likeRandomMatch;    // 1/4
     double likeRandomMisMatch; // 3/4
     double likeRandomMatchProb;    // 1/4
     double likeRandomMisMatchProb; // 3/4
+
 
 
     //prior dist

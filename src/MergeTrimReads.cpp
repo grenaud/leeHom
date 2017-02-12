@@ -1,9 +1,9 @@
 #include "MergeTrimReads.h"
 
-
 //#define DEBUG2
 // #define DEBUGSR
 
+// #define DEBUGQUICK
 //#define DEBUGADAPT
 //#define DEBUGOVERLAP
 // // //#define DEBUGTOTALOV
@@ -215,6 +215,23 @@ void MergeTrimReads::initMerge(){
         cout<<"mismatch " <<likeMismatchProb[i]<<endl;
 #endif
 
+    }
+
+
+    //pre-computing the likelihood for random sequence of length i
+    for(int i=0;i<MAXLENGTHSEQUENCE;i++){
+	likeRandomMatchSequence[i] = (i*likeRandomMatch);
+    }
+
+    for(int i=0;i<64;i++){//for each QC
+	likeAvgRandomBase[i] = 0.75*likeMismatch[ i ] + 0.25*likeMatch[ i ] ;
+    }
+
+    //for(int i=0;i<MAXLENGTHSEQUENCE;i++){
+    for(int i=0;i<64;i++){
+	for(int j=0;j<MAXLENGTHSEQUENCE;j++){	    
+	    likeAvgRandomSequence[i][j] = double(j)*likeAvgRandomBase[i];
+	}
     }
 
     //pre-computing the likelihood for pairs of nucleotides
@@ -811,31 +828,55 @@ inline double MergeTrimReads::detectAdapter(const string      & read,
 	qualSum += qual[indexRead] ;
 
 #ifdef DEBUGADAPT
-	cerr<<"apt "<<i<<"\t"<<likelihoodMatch<<"\tq:"<<qual[indexRead]<<"\t"<<likeMatch[ qual[indexRead] ]<<"\t"<<likeMismatch[ qual[indexRead] ]<<"\t"<<(i*likeRandomMatch)<<endl;
+	cerr<<"apt "<<i<<"\t"<<likelihoodMatch<<"\tq:"<<qual[indexRead]<<"\t"<<likeMatch[ qual[indexRead] ]<<"\t"<<likeMismatch[ qual[indexRead] ]<<"\t"<<(likeRandomMatchSequence[i])<<endl;
 #endif
 
 	//(*iterations)++;
 	i++;
 
 
- 	if( quickMode &&
-	   (i== minComparisonsAdapterForQuickMode) ){
+ 	if( quickMode// ){
+	    &&
+	    (i == minComparisonsAdapterForQuickMode) ){
 
 #ifdef DEBUGADAPT
-	    cerr<<"check for break ll="<<likelihoodMatch<<"\trandom="<<(i*likeRandomMatch)<<"\tlogq="<<log10quickModeProbError <<endl;
+	    cerr<<"check for break ll="<<likelihoodMatch<<"\trandom="<<(likeRandomMatchSequence[i])<<"\tlogq="<<log10quickModeProbError <<endl;
 #endif
  	    
- 	    if(( (likelihoodMatch - (i*likeRandomMatch)) < log10quickModeProbError )){
- 		
- 		double iterationLeft = maxIterations-i;
+ 	    if(( (likelihoodMatch - likeRandomMatchSequence[i]) < log10quickModeProbError )){
 
- 		int qavg = int(qualSum/minComparisonsAdapterForQuickMode); //wrong, terrible hack to get avg qual because they are on a log scale
+#ifdef DEBUGQUICK
+		cerr<<"breaking at i="<<i<<" ll="<<likelihoodMatch<<"\trandom="<<likeRandomMatchSequence[i]<<"\tlogq="<<log10quickModeProbError <<endl;
+#endif
+		
+		
+ 		int iterationLeft = maxIterations-i;
+		
+ 		int qavg = int( qualSum/double(i) ); //wrong, terrible hack to get avg qual because they are on a log scale
  		//hack: we expect 75% of mismatches and 25% of matches
- 		likelihoodMatch += iterationLeft*0.75*likeMismatch[ qavg ] + iterationLeft*0.25*likeMatch[ qavg ] ;
+ 		likelihoodMatch += likeAvgRandomSequence[qavg][iterationLeft];
+		//iterationLeft*( likeAvgMatchBase[qavg] );
+		// 		likelihoodMatch += iterationLeft*( likeAvgMatchBase[qavg] );
+		//0.75*likeMismatch[ qavg ] + iterationLeft*0.25*likeMatch[ qavg ] ;
 
  		indexRead =  (maxIterations-1)+offsetRead;//last iteration
 		//cerr<<"break"<<endl;
- 		break;
+
+		//added
+		int extraBases = max(0,int(read.length())-int(indexRead)-1);
+
+
+   
+		//Adding the likelihood of the remaining bases
+		likelihoodMatch += double( extraBases ) * likeRandomMatch;
+
+
+
+		return likelihoodMatch;
+
+
+
+ 		//break;
  	    }
  	}
 
@@ -1461,6 +1502,8 @@ inline void MergeTrimReads::computeConsensusPairedEnd( const string & read1,
 merged MergeTrimReads::process_SR(string  read1, 
 				  string  qual1){
 
+
+
     merged toReturn;
 
 
@@ -1557,6 +1600,9 @@ merged MergeTrimReads::process_SR(string  read1,
     toReturn.code    =' ';
     toReturn.sequence="";	   
     toReturn.quality ="";
+
+
+
     return toReturn;
   
 }
@@ -1856,10 +1902,10 @@ MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, 
      maxLikelihoodRatio       = 1.0/20.0;
      log10maxLikelihoodRatio  = log10(maxLikelihoodRatio);
 
-     quickModeProbError       = 1.0 / 100000000;
+     quickModeProbError       = 1.0 / 10000000000;
      log10quickModeProbError  = log10(quickModeProbError);
  
-     minComparisonsAdapterForQuickMode = 8; // minimum number of comparisons for the adapter in quick mode
+     minComparisonsAdapterForQuickMode = 5; // minimum number of comparisons for the adapter in quick mode
 
      maxadapter_comp  = 30; /**< maximum number of bases to be compared in the adapter */
      min_overlap_seqs = 10; /**< maximum number that have to match in the case of partial overlap */ 
