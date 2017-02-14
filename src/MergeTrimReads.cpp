@@ -1,9 +1,9 @@
 #include "MergeTrimReads.h"
 
+//#define DEBUGINIT
 //#define DEBUG2
 // #define DEBUGSR
-
-// #define DEBUGQUICK
+//#define DEBUGQUICK
 //#define DEBUGADAPT
 //#define DEBUGOVERLAP
 // // //#define DEBUGTOTALOV
@@ -173,9 +173,9 @@ void MergeTrimReads::initMerge(){
     likeRandomMatch       = log( 1.0/4.0 )/log(10);
     likeRandomMisMatch    = log( 3.0/4.0 )/log(10);
 
-#ifdef DEBUG2
-    cout<<"likeRandomMisMatch "<<likeRandomMisMatch<<endl;
-    cout<<"likeRandomMatch    "<<likeRandomMatch<<endl;
+#ifdef DEBUGINIT
+    cerr<<"likeRandomMisMatch "<<likeRandomMisMatch<<endl;
+    cerr<<"likeRandomMatch    "<<likeRandomMatch<<endl;
 #endif
 
     //probability scores for qscores less than 2 make no sense
@@ -207,29 +207,37 @@ void MergeTrimReads::initMerge(){
 	probForQual[i] = max(double(1.0)-pow(double(10.0),double(i)/double(-10.0)),
 			     max_prob_N);
 
-#ifdef DEBUG2
-        cout<<endl<<"qual = "<<i<<endl;
-        cout<<"match    " <<likeMatch[i]<<endl;
-        cout<<"mismatch " <<likeMismatch[i]<<endl;
-	cout<<"match    " <<likeMatchProb[i]<<endl;
-        cout<<"mismatch " <<likeMismatchProb[i]<<endl;
+#ifdef DEBUGINIT
+        cerr<<endl<<"qual = "<<i<<endl;
+        cerr<<"match    " <<likeMatch[i]<<endl;
+        cerr<<"mismatch " <<likeMismatch[i]<<endl;
+	cerr<<"match    " <<likeMatchProb[i]<<endl;
+        cerr<<"mismatch " <<likeMismatchProb[i]<<endl;
 #endif
 
     }
 
 
     //pre-computing the likelihood for random sequence of length i
-    for(int i=0;i<MAXLENGTHSEQUENCE;i++){
+    
+    for(int i=0;i<2*MAXLENGTHSEQUENCE;i++){
 	likeRandomMatchSequence[i] = (i*likeRandomMatch);
     }
 
+    
     for(int i=0;i<64;i++){//for each QC
 	likeAvgRandomBase[i] = 0.75*likeMismatch[ i ] + 0.25*likeMatch[ i ] ;
+
+#ifdef DEBUGINIT
+	cerr<<"likeAvgRandomBase["<<i<<"]     = "<< likeAvgRandomBase[i]  << endl;
+#endif
+	
     }
 
     //for(int i=0;i<MAXLENGTHSEQUENCE;i++){
+
     for(int i=0;i<64;i++){
-	for(int j=0;j<MAXLENGTHSEQUENCE;j++){	    
+	for(int j=0;j<2*MAXLENGTHSEQUENCE;j++){    
 	    likeAvgRandomSequence[i][j] = double(j)*likeAvgRandomBase[i];
 	}
     }
@@ -248,34 +256,61 @@ void MergeTrimReads::initMerge(){
 		       1.0*likeMismatchProb[i] *    likeMatchProb[j] +     //wm
 		       2.0*likeMismatchProb[i] * likeMismatchProb[j] )     //ww
 		       )/log(10);  
+#ifdef DEBUGINIT
+	    cerr<<"likeMatchPair["<<i<<"]["<<j<<"]     = "<<likeMatchPair[i][j]   << "\t" <<exp10(likeMatchPair[i][j])    << endl;
+	    cerr<<"likeMismatchPair["<<i<<"]["<<j<<"]  = "<<likeMismatchPair[i][j]<< "\t" <<exp10(likeMismatchPair[i][j])<< endl;	    
+#endif
+	    
 	}
     }
 
+    
+    for(int i=0;i<64;i++){
+	likeAvgRandomOverlapBase[i] = 0.75*likeMismatchPair[ i ][ i ] + 0.25*likeMatchPair[ i ][ i ] + likeRandomMatch;
+
+#ifdef DEBUGINIT
+	cerr<<"likeAvgRandomOverlapBase["<<i<<"]     = "<<likeAvgRandomOverlapBase[i]    << "\t" <<
+	    0.75*likeMismatchPair[ i ][ i ] + 0.25*likeMatchPair[ i ][ i ]<<"\t"<<	    
+	    likeRandomMatch
+	    <<endl;
+#endif
+	
+    }
+    
+    for(int i=0;i<64;i++){
+	for(int j=0;j<(2*MAXLENGTHSEQUENCE);j++){	    
+	    likeAvgRandomOverlapSequence[i][j] = double(j)*likeAvgRandomOverlapBase[i];
+#ifdef DEBUGINIT
+	    cerr<<"likeAvgRandomOverlapSequence["<<i<<"]["<<j<<"]     = "<<likeAvgRandomOverlapSequence[i][j]   << "\t" <<exp10(likeAvgRandomOverlapSequence[i][j])    << endl;
+#endif
+	}
+    }
+    
 #ifdef DEBUG2
-    cout<<"pair qual match"<<endl;
-    cout<<"\t";
+    cerr<<"pair qual match"<<endl;
+    cerr<<"\t";
     for(int i=0;i<64;i++)
-	cout<<i<<"\t";
+	cerr<<i<<"\t";
 
     for(int i=0;i<64;i++){
-	cout<<i<<"\t";
+	cerr<<i<<"\t";
 	for(int j=0;j<64;j++){
-	    cout<<pow(10.0,likeMatchPair[i][j])<<"\t";	    
+	    cerr<<pow(10.0,likeMatchPair[i][j])<<"\t";	    
 	}
-	cout<<endl;
+	cerr<<endl;
     }
 
-    cout<<"pair qual mismatch"<<endl;
-    cout<<"\t";
+    cerr<<"pair qual mismatch"<<endl;
+    cerr<<"\t";
     for(int i=0;i<64;i++)
-	cout<<i<<"\t";
+	cerr<<i<<"\t";
 
     for(int i=0;i<64;i++){
-	cout<<i<<"\t";
+	cerr<<i<<"\t";
 	for(int j=0;j<64;j++){
-	    cout<<pow(10.0,likeMismatchPair[i][j])<<"\t";	    
+	    cerr<<pow(10.0,likeMismatchPair[i][j])<<"\t";	    
 	}
-	cout<<endl;
+	cerr<<endl;
     }
 
 
@@ -289,7 +324,7 @@ void MergeTrimReads::initMerge(){
 	    cdfDist[i] = logcompcdf(location,scale, i ); 
 
 #ifdef DEBUG2
-	    cout<<"pdfDist["<<i<<"]="<<pow(10.0,pdfDist[i])<<"\t"<<"cdfDist["<<i<<"]="<<pow(10.0,cdfDist[i])<<endl;
+	    cerr<<"pdfDist["<<i<<"]="<<pow(10.0,pdfDist[i])<<"\t"<<"cdfDist["<<i<<"]="<<pow(10.0,cdfDist[i])<<endl;
 #endif
 	}
     }
@@ -649,10 +684,12 @@ inline double MergeTrimReads::measureOverlap(const string      & read1,
 					     const vector<int> & qual1,
 					     const string      & read2,
 					     const vector<int> & qual2,
+					     const int         & avgQC1,
+					     const int         & avgQC2,
 					     const int         & maxLengthForPair,
-					     unsigned int      offsetRead,				    
+					     unsigned int        offsetRead,				    
 					     //double *          iterations =0 ,
-					     int  *            matches){
+					     int  *              matches){
     
 #ifdef DEBUGOVERLAP
     string comparedread1;
@@ -665,7 +702,44 @@ inline double MergeTrimReads::measureOverlap(const string      & read1,
     
     for(int i=0;i<int(offsetRead);i++){
 
+	if(quickMode &&
+	   (minComparisonsAdapterForQuickMode==i)){
 
+#ifdef DEBUGQUICK
+	    cerr<<"check for break ll="<<likelihoodMatch<<"\trandom="<<(likeRandomMatchSequence[i])<<"\tlogq="<<log10quickModeProbError <<endl;
+#endif
+ 	    
+ 	    if(( (likelihoodMatch - likeRandomMatchSequence[i]) < log10quickModeProbError )){
+
+#ifdef DEBUGQUICK
+		cerr<<"breaking at i="<<i<<" ll="<<likelihoodMatch<<"\trandom="<<likeRandomMatchSequence[i]<<"\tlogq="<<log10quickModeProbError <<endl;
+#endif
+		if(offsetRead<=maxLengthForPair){
+
+		    likelihoodMatch  +=  likeAvgRandomOverlapSequence[ (avgQC1+avgQC2)/2 ][ int(offsetRead)-i ];
+		    return likelihoodMatch;
+		    
+		}else{
+		    
+		    int minLengthForPair=min(read1.size(),read2.size());
+
+		    likelihoodMatch  +=  likeAvgRandomOverlapSequence[ (avgQC1+avgQC2)/2 ][ minLengthForPair ];//overlapping portion 
+		    likelihoodMatch  +=  likeRandomMatchSequence[offsetRead-minLengthForPair];  //overhang
+		    return likelihoodMatch;
+		}
+	    }
+
+	    else{
+
+#ifdef DEBUGQUICK
+		cerr<<"keep going at i="<<i<<" ll="<<likelihoodMatch<<"\trandom="<<likeRandomMatchSequence[i]<<"\tlogq="<<log10quickModeProbError <<endl;
+#endif
+
+	    }
+	    
+
+	}
+	
 	//Both have characters
 	if(     i1<int(read1.size()) && 
 		i2<int(read2.size()) && 
@@ -783,8 +857,9 @@ inline double MergeTrimReads::measureOverlap(const string      & read1,
 inline double MergeTrimReads::detectAdapter(const string      & read,
 					    const vector<int> & qual,
 					    const string      & adapterString,
+					    const int         & avgQC,
 					    unsigned int        offsetRead,
-					    int              *  matches){
+					    int               * matches){
     
 
     double likelihoodMatch=0.0;
@@ -800,7 +875,7 @@ inline double MergeTrimReads::detectAdapter(const string      & read,
 
     unsigned  i=0;
     unsigned  indexRead=offsetRead;
-    double qualSum = 0.0;
+    // double qualSum = 0.0;
 
     while(i<maxIterations){
 	indexRead = i+offsetRead;
@@ -825,7 +900,7 @@ inline double MergeTrimReads::detectAdapter(const string      & read,
 	}else{ //mismatch
 	    likelihoodMatch  += likeMismatch[ qual[indexRead] ];
 	}
-	qualSum += qual[indexRead] ;
+	// qualSum += qual[indexRead] ;
 
 #ifdef DEBUGADAPT
 	cerr<<"apt "<<i<<"\t"<<likelihoodMatch<<"\tq:"<<qual[indexRead]<<"\t"<<likeMatch[ qual[indexRead] ]<<"\t"<<likeMismatch[ qual[indexRead] ]<<"\t"<<(likeRandomMatchSequence[i])<<endl;
@@ -839,7 +914,7 @@ inline double MergeTrimReads::detectAdapter(const string      & read,
 	    &&
 	    (i == minComparisonsAdapterForQuickMode) ){
 
-#ifdef DEBUGADAPT
+#ifdef DEBUGQUICK
 	    cerr<<"check for break ll="<<likelihoodMatch<<"\trandom="<<(likeRandomMatchSequence[i])<<"\tlogq="<<log10quickModeProbError <<endl;
 #endif
  	    
@@ -852,9 +927,9 @@ inline double MergeTrimReads::detectAdapter(const string      & read,
 		
  		int iterationLeft = maxIterations-i;
 		
- 		int qavg = int( qualSum/double(i) ); //wrong, terrible hack to get avg qual because they are on a log scale
+ 		//int qavg = int( qualSum/double(i) ); 
  		//hack: we expect 75% of mismatches and 25% of matches
- 		likelihoodMatch += likeAvgRandomSequence[qavg][iterationLeft];
+ 		likelihoodMatch += likeAvgRandomSequence[avgQC][iterationLeft];
 		//iterationLeft*( likeAvgMatchBase[qavg] );
 		// 		likelihoodMatch += iterationLeft*( likeAvgMatchBase[qavg] );
 		//0.75*likeMismatch[ qavg ] + iterationLeft*0.25*likeMatch[ qavg ] ;
@@ -865,19 +940,19 @@ inline double MergeTrimReads::detectAdapter(const string      & read,
 		//added
 		int extraBases = max(0,int(read.length())-int(indexRead)-1);
 
-
-   
 		//Adding the likelihood of the remaining bases
 		likelihoodMatch += double( extraBases ) * likeRandomMatch;
 
-
-
 		return likelihoodMatch;
 
-
-
  		//break;
- 	    }
+ 	    }else{
+
+#ifdef DEBUGQUICK
+		cerr<<"looping at i="<<i<<" ll="<<likelihoodMatch<<"\trandom="<<likeRandomMatchSequence[i]<<"\tlogq="<<log10quickModeProbError <<endl;
+#endif
+
+	    }
  	}
 
     }//end while
@@ -1101,16 +1176,19 @@ inline bool MergeTrimReads::checkChimera(const string & read1,
   \param qual  The string of quality scores (input)
   \param qualv The vector of quality scores as integers (output)
 */
-inline void MergeTrimReads::string2NumericalQualScores(const string & qual,vector<int> & qualv){
+inline int MergeTrimReads::string2NumericalQualScores(const string & qual,vector<int> & qualv){
 
+    double sumQC=0.0;
     for(unsigned int i=0;i<qual.length();i++){
 	//this nonsense is to make old compilers happy
 	int t2  = int(char( qual[i] ))-qualOffset;
 	int t = max( t2,2);
 	//qualv.push_back( t  );
 	qualv[i] =t;
+	sumQC  += double(t);
     }
     
+    return int(sumQC/double(qual.length()));    //wrong, terrible hack to get avg qual because they are on a log scale
 }
 
 
@@ -1149,6 +1227,7 @@ inline void MergeTrimReads::string2NumericalQualScores(const string & qual,vecto
 */
 inline void MergeTrimReads::computeBestLikelihoodSingle(const string      & read1,
 							const vector<int> & qualv1,
+							const int         & avgQC,
 							double & logLikelihoodTotal,
 							int    & logLikelihoodTotalIdx,
 							double & sndlogLikelihoodTotal,
@@ -1169,7 +1248,7 @@ inline void MergeTrimReads::computeBestLikelihoodSingle(const string      & read
 	double logLike=
 	    (double( indexAdapter ) * likeRandomMatch ) //likelihood of observing the remaining bases, before the adapter
 	    +
-	    detectAdapter( read1 , qualv1 , options_adapter_F,indexAdapter , &matches );
+	    detectAdapter( read1 , qualv1 , options_adapter_F,avgQC,indexAdapter , &matches  );
 
 	if(useDist){
 	    //logLike += logcomppdf(location,scale,indexAdapter);
@@ -1262,6 +1341,9 @@ inline void MergeTrimReads::computeBestLikelihoodPairedEnd(const string &      r
 							   const string &      read2_rev,
 							   const vector<int> & qualv2_rev,
 
+							   const int & avgQC1,
+							   const int & avgQC2,
+							   
 							   const int & lengthRead1,
 							   const int & lengthRead2,
 							   const int & maxLengthForPair,
@@ -1279,7 +1361,7 @@ inline void MergeTrimReads::computeBestLikelihoodPairedEnd(const string &      r
     //int lengthDiffR1_R2 =  (lengthRead1-lengthRead2);
 
     for(int indexAdapter=0; //let index adapters be the index of the potential P7/P5 adapter
-	indexAdapter<(2*maxLengthForPair-min_overlap_seqs);
+	indexAdapter<int(2*maxLengthForPair-min_overlap_seqs);
 	indexAdapter++){
 	double logLike=0.0;
 
@@ -1293,20 +1375,114 @@ inline void MergeTrimReads::computeBestLikelihoodPairedEnd(const string &      r
 	    
 	//adapters
  	if(indexAdapter<lengthRead1)
- 	    logLike  +=  detectAdapter(    read1 ,     qualv1     , options_adapter_F,indexAdapter, &matches);
+ 	    logLike  +=  detectAdapter(    read1 ,     qualv1     , options_adapter_F, avgQC1,indexAdapter, &matches );
 
+
+#ifdef DEBUGQUICK
+ 	    cerr<<"computeBestLikelihoodPairedEnd1 ll="<<logLike<<"\t"<<indexAdapter<<"\t"<<lengthRead1<<"\t"<<"\trandom="<<(likeRandomMatchSequence[ (lengthRead1-indexAdapter) ])<<"\tlogq="<<log10quickModeProbError <<endl;
+#endif
+	
  	if(indexAdapter<lengthRead2)
- 	    logLike  +=  detectAdapter(    read2 ,     qualv2     , options_adapter_S,indexAdapter, &matches);
+ 	    logLike  +=  detectAdapter(    read2 ,     qualv2     , options_adapter_S, avgQC2,indexAdapter, &matches );
+
+	if(quickMode && logLike!=0.0){
+
+#ifdef DEBUGQUICK
+	    cerr<<"computeBestLikelihoodPairedEnd2 ll="<<logLike<<"\t"<<indexAdapter<<"\t"<<lengthRead1<<"\t"<<lengthRead2<<"\trandom="<<(likeRandomMatchSequence[ (lengthRead1-indexAdapter) + (lengthRead2-indexAdapter) ])<<"\tlogq="<<log10quickModeProbError <<endl;
+#endif
+
+ 	    if( (logLike - likeRandomMatchSequence[ (lengthRead1-indexAdapter) + (lengthRead2-indexAdapter) ]) < log10quickModeProbError ){
+
+#ifdef DEBUGQUICK
+		cerr<<"breaking" <<endl;
+#endif
+
+		//likelihood overlap
+
+		if(indexAdapter<=maxLengthForPair){
+
+#ifdef DEBUGQUICK
+		    cerr<<"perfect overlap of length "<<indexAdapter<<" with avg QC of "<< ((avgQC1+avgQC2)/2) <<" adding ll=" <<likeAvgRandomOverlapSequence[ (avgQC1+avgQC2)/2 ][ indexAdapter ]<<endl;
+		    cerr<<"normal likelihood of overlap "<<measureOverlap(   read1      ,
+									     qualv1     ,
+									     read2_rev  ,
+									     qualv2_rev ,
+									     avgQC1,
+									     avgQC2,
+									     maxLengthForPair,					      
+									     indexAdapter,
+									     &matches)<<endl;
+
+#endif
 
 	
-	//overlap
-	logLike  +=	 measureOverlap(   read1      ,
+		    //perfect overlap of length = indexAdapter
+		    logLike  +=  likeAvgRandomOverlapSequence[ (avgQC1+avgQC2)/2 ][ indexAdapter ];
+		     
+		}else{
+
+		    int minLengthForPair=min(lengthRead1,lengthRead2);
+
+#ifdef DEBUGQUICK
+		    cerr<<" overlap of "<< minLengthForPair<<"with avg QC of "<< ((avgQC1+avgQC2)/2) <<" with an overhang of " <<(indexAdapter-minLengthForPair)<<endl;
+		    cerr<<" overlap with an overhang adding ll=" <<likeAvgRandomOverlapSequence[ (avgQC1+avgQC2)/2 ][ minLengthForPair ]<<endl;
+		    cerr<<" overlap with an overhang adding ll=" <<likeRandomMatchSequence[indexAdapter-minLengthForPair]<<endl;
+		    cerr<<"normal likelihood of overlap "<<measureOverlap(   read1      ,
+									     qualv1     ,
+									     read2_rev  ,
+									     qualv2_rev ,
+									     avgQC1,
+									     avgQC2,
+									     maxLengthForPair,					      
+									     indexAdapter,
+									     &matches)<<endl;
+
+#endif
+
+
+		    logLike  +=  likeAvgRandomOverlapSequence[ (avgQC1+avgQC2)/2 ][ minLengthForPair ];//overlapping portion 
+		    logLike  +=  likeRandomMatchSequence[indexAdapter-minLengthForPair];  //overhang
+		    
+		}
+		
+		//likelihood overhangs
+
+		
+		
+	    }else{
+
+#ifdef DEBUGQUICK
+		cerr<<"compute overlap" <<endl;
+#endif
+
+		//overlap
+		logLike  +=	 measureOverlap(   read1      ,
+						   qualv1     ,
+						   read2_rev  ,
+						   qualv2_rev ,
+						   avgQC1,
+						   avgQC2,
+						   maxLengthForPair,					      
+						   indexAdapter,
+						   &matches);
+
+		
+	    }
+	    
+	    
+	}else{
+	
+	    //overlap
+	    logLike  +=	 measureOverlap(   read1      ,
 					   qualv1     ,
 					   read2_rev  ,
-					   qualv2_rev ,  
+					   qualv2_rev ,
+					   avgQC1,
+					   avgQC2,
 					   maxLengthForPair,					      
 					   indexAdapter,
 					   &matches);
+	}
 	//adding prior
 	if(useDist){
 	    //logLike += logcomppdf(location,scale,indexAdapter);
@@ -1521,7 +1697,7 @@ merged MergeTrimReads::process_SR(string  read1,
     //vector<int> qualv1;
     vector<int> qualv1 (qual1.size(),2);
 
-    string2NumericalQualScores(qual1,qualv1);
+    int avgQC=string2NumericalQualScores(qual1,qualv1);
     
 
     //start detecting chimera //
@@ -1558,6 +1734,7 @@ merged MergeTrimReads::process_SR(string  read1,
 
     computeBestLikelihoodSingle(read1,
 				qualv1,
+				avgQC,
 				logLikelihoodTotal,
 				logLikelihoodTotalIdx,
 				sndlogLikelihoodTotal,
@@ -1652,8 +1829,8 @@ merged MergeTrimReads::process_PE( string  read1,  string  qual1,
     vector<int> qualv1  (qual1.size(),2);
     vector<int> qualv2  (qual2.size(),2);
 
-    string2NumericalQualScores(qual1,qualv1);
-    string2NumericalQualScores(qual2,qualv2);
+    int avgQC1=string2NumericalQualScores(qual1,qualv1);
+    int avgQC2=string2NumericalQualScores(qual2,qualv2);
 
 
 
@@ -1748,6 +1925,9 @@ merged MergeTrimReads::process_PE( string  read1,  string  qual1,
 
 				   read2_rev,
 				   qualv2_rev,
+				   
+				   avgQC1,
+				   avgQC2,
 				   
 				   lengthRead1,
 				   lengthRead2,
@@ -1902,10 +2082,11 @@ MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, 
      maxLikelihoodRatio       = 1.0/20.0;
      log10maxLikelihoodRatio  = log10(maxLikelihoodRatio);
 
-     quickModeProbError       = 1.0 / 10000000000;
+     //quickModeProbError       = 1.0 / 10000000000;
+     quickModeProbError       = 1.0 / 100000000;
      log10quickModeProbError  = log10(quickModeProbError);
  
-     minComparisonsAdapterForQuickMode = 5; // minimum number of comparisons for the adapter in quick mode
+     minComparisonsAdapterForQuickMode = 6; // minimum number of comparisons for the adapter in quick mode
 
      maxadapter_comp  = 30; /**< maximum number of bases to be compared in the adapter */
      min_overlap_seqs = 10; /**< maximum number that have to match in the case of partial overlap */ 

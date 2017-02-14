@@ -106,9 +106,12 @@ class MergeTrimReads{
     double likeMismatchProb[64];
 
     double likeAvgRandomBase[64]; //likelihood of 2 base being alike by chance: 0.75*log[mismatch] + 0.25*log[match] at a given qc
-    double likeAvgRandomSequence[64][MAXLENGTHSEQUENCE]; //likelihood of 2 sequences being alike by chance
-    double likeRandomMatchSequence[MAXLENGTHSEQUENCE];    
-    
+    double likeAvgRandomSequence[64][2*MAXLENGTHSEQUENCE]; //likelihood of 2 sequences being alike by chance
+    double likeRandomMatchSequence[2*MAXLENGTHSEQUENCE];    
+
+    double likeAvgRandomOverlapBase[64]; //likelihood of 2 base being alike by chance: 0.75*log[mismatch] + 0.25*log[match] at a given qc
+    double likeAvgRandomOverlapSequence[64][2*MAXLENGTHSEQUENCE]; //likelihood of 2 sequences being alike by chance
+
     double likeMatchPair[64][64];
     double likeMismatchPair[64][64];
 
@@ -158,15 +161,20 @@ class MergeTrimReads{
 			  const vector<int> & qual1,
 			  const string      & read2,
 			  const vector<int> & qual2,
+			   const int        & avgQC1,
+			  const int         & avgQC2,
 			  const int         & maxLengthForPair,
 			  unsigned int      offsetRead=0,				    
 			  //double *          iterations =0 ,
 			  int  *            matches=0);
+
     double detectAdapter(const string      & read,
 			 const vector<int> & qual,
 			 const string      & adapterString,
+			 const int         & qavg,
 			 unsigned int        offsetRead=0,
-			 int              *  matches=0);
+			 int               * matches=0
+			 );
 
     long double logcomppdf(long double mu,long double sigma,long double x);
     long double logcompcdf(long double mu,long double sigma,long double x);
@@ -182,9 +190,11 @@ class MergeTrimReads{
 		      const vector<int> & qualv1,
 		      merged & toReturn, 
 		      const double & logLikelihoodTotal);
-    void string2NumericalQualScores(const string & qual,vector<int> & qualv);
+    int string2NumericalQualScores(const string & qual,vector<int> & qualv);
+
     void computeBestLikelihoodSingle(const string      & read1,
 				     const vector<int> & qualv1,
+				     const int         & avgQC,
 				     double & logLikelihoodTotal,
 				     int &    logLikelihoodTotalIdx,
 				     double & sndlogLikelihoodTotal,
@@ -198,7 +208,10 @@ class MergeTrimReads{
 					    
 					const string &      read2_rev,
 					const vector<int> & qualv2_rev,
-					    
+
+					const int & avgQC1,
+					const int & avgQC2,
+							 
 					const int & lengthRead1,
 					const int & lengthRead2,
 					const int & maxLengthForPair,

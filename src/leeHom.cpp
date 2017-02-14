@@ -346,7 +346,7 @@ int main (int argc, char *argv[]) {
 
 
 	FastQParser * fqp1;
-	FastQParser * fqp2;
+	FastQParser * fqp2=NULL;
 
 	if(singleEndModeFQ){
 	    fqp1 = new FastQParser (fastqfile1);
