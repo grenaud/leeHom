@@ -3,9 +3,9 @@ BAMTOOLS= $(realpath ../bamtools/)
 LIBGAB= $(realpath ../libgab/)
 
 
-CXX      = g++ -g#-pg# -g
+CXX      = g++ #-g#-pg# -g
 CXXFLAGS+= -O3 -Wall -I${BAMTOOLS}/include/ -I${LIBGAB} -I${LIBGAB}/gzstream/  
-LDFLAGS  = -lm -lz  -lpthread -lprofiler
+LDFLAGS  = -lm -lz  -lpthread #-lprofiler
 LDLIBS+=  ${BAMTOOLS}/build/src/utils/CMakeFiles/BamTools-utils.dir/*cpp.o ${BAMTOOLS}/lib/libbamtools.a ${LIBGAB}/utils.o 
 
 
