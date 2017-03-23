@@ -44,7 +44,11 @@ class MergeTrimReads{
  private:
     //VARIABLES
     double maxLikelihoodRatio  ;
-    
+    double log10maxLikelihoodRatio  ;
+
+    double fastModeProbError  ;
+    double log10fastModeProbError  ;
+
     double likelihoodChimera  ;
     double likelihoodAdapterSR ;
     
@@ -76,7 +80,7 @@ class MergeTrimReads{
     /* extern size_t min_length ; */
 
     //Chimera options and adapter
-    char*  chimInit[];/* = { */
+    //char*  chimInit[];/* = { */
      
     vector<string> adapter_chimeras ;
     string options_adapter_F;
