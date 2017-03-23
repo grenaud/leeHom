@@ -83,7 +83,7 @@ class MergeTrimReads{
     /* extern size_t min_length ; */
 
     //Chimera options and adapter
-    char*  chimInit[];/* = { */
+    //char*  chimInit[];/* = { */
      
     vector<string> adapter_chimeras ;
     string options_adapter_F;
