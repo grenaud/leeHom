@@ -1,5 +1,5 @@
-==========================================================
-  Bayesian reconstruction of ancient DNA fragments
+
+Bayesian reconstruction of ancient DNA fragments
 ==========================================================
 
 QUESTIONS :
@@ -129,6 +129,16 @@ Does my BAM file have to be unmapped ?
 BAM files can also be used to store unmapped reads. Ideally, leehom should be used prior to mapping since reads will map to a more accurate location if the adapters have been removed and overlapping stretches have been merged. 
 
 
+What do the "FF" tags in the BAM file mean?
+-----------
+Here is a table with the meaning for each FF flag:
+
+
+| FF            |                     meaning                        | 
+| ------------- |:--------------------------------------------------:|
+| 1             | single-end reads trimmed                           | 
+| 2             | paired-end merged overlapping portions             | 
+| 3             | paired-end trimmed and merged overlapping portions | 
 
 
 Test data:
