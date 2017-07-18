@@ -3,11 +3,8 @@
 //#define DEBUGINIT
 //#define DEBUG2
 // #define DEBUGSR
-<<<<<<< HEAD
-//#define DEBUGQUICK
-=======
 
->>>>>>> 544f462ee01ff394a11c36d394d35dc290f83120
+//#define DEBUGQUICK
 //#define DEBUGADAPT
 //#define DEBUGOVERLAP
 // // //#define DEBUGTOTALOV
@@ -879,13 +876,9 @@ inline double MergeTrimReads::detectAdapter(const string      & read,
 
     unsigned  i=0;
     unsigned  indexRead=offsetRead;
-<<<<<<< HEAD
-    // double qualSum = 0.0;
-
-=======
     double qualSum = 0.0;
     
->>>>>>> 544f462ee01ff394a11c36d394d35dc290f83120
+
     while(i<maxIterations){
 	indexRead = i+offsetRead;
 	//cerr<<"indexRead "<<indexRead<<endl;
@@ -911,18 +904,12 @@ inline double MergeTrimReads::detectAdapter(const string      & read,
 	}else{ //mismatch
 	    likelihoodMatch  += likeMismatch[ qual[indexRead] ];
 	}
-<<<<<<< HEAD
-	// qualSum += qual[indexRead] ;
-
-#ifdef DEBUGADAPT
-	cerr<<"apt "<<i<<"\t"<<likelihoodMatch<<"\tq:"<<qual[indexRead]<<"\t"<<likeMatch[ qual[indexRead] ]<<"\t"<<likeMismatch[ qual[indexRead] ]<<"\t"<<(likeRandomMatchSequence[i])<<endl;
-=======
 	//if fasta
 	qualSum += qual[indexRead] ;
 
 #ifdef DEBUGADAPT
 	cerr<<"apt "<<i<<"\t"<<likelihoodMatch<<"\tq:"<<qual[indexRead]<<"\t"<<likeMatch[ qual[indexRead] ]<<"\t"<<likeMismatch[ qual[indexRead] ]<<"\t"<<(i*likeRandomMatch)<<endl;
->>>>>>> 544f462ee01ff394a11c36d394d35dc290f83120
+
 #endif
 	
 	//test fast
@@ -930,7 +917,7 @@ inline double MergeTrimReads::detectAdapter(const string      & read,
 	//(*iterations)++;
 	i++;
 
-<<<<<<< HEAD
+
 
  	if( quickMode// ){
 	    &&
@@ -978,32 +965,6 @@ inline double MergeTrimReads::detectAdapter(const string      & read,
  	}
 
     }//end while
-=======
-	
-	unsigned  loopsForFast=10;
-	if( i==(loopsForFast) ){
-
-	    // cerr<<likelihoodMatch<<"\t"<<i*likeRandomMatch<<"\t"<<log10fastModeProbError<<endl;
-	    // cerr<<pow(10.0,likelihoodMatch)<<"\t"<<pow(10.0,i*likeRandomMatch)<<"\t"<<pow(10.0,i*likeRandomMatch)/pow(10.0,likelihoodMatch)<<"\t"<<log10fastModeProbError<<endl;
-	    
-	    if(( (likelihoodMatch - (i*likeRandomMatch)) < log10fastModeProbError )){
-		
-		double iterationLeft = maxIterations-i;
-		// cerr<<"hopeless\t"<<i<<"\t"<<maxIterations<<"\t"<<iterationLeft<<endl;
-
-		int qavg = int(qualSum/loopsForFast); //wrong, terrible hack to get avg qual because they are on a log scale
-		//hack, we expect 75% of mismatches and 25% of matches
-		likelihoodMatch += iterationLeft*0.75*likeMismatch[ qavg ] + iterationLeft*0.25*likeMatch[ qavg ] ;
-		// cerr<<qavg<<"\t"<<likelihoodMatch<<endl;
-
-		indexRead =  (maxIterations-1)+offsetRead;//last iteration
-
-		break;
-	    }
-	}
-
-    }
->>>>>>> 544f462ee01ff394a11c36d394d35dc290f83120
 
     int extraBases = max(0,int(read.length())-int(indexRead)-1);
 
@@ -1233,10 +1194,8 @@ inline int MergeTrimReads::string2NumericalQualScores(const string & qual,vector
 	int t = max( t2,2);
 	//qualv.push_back( t  );
 	qualv[i] =t;
-<<<<<<< HEAD
 	sumQC  += double(t);
-=======
->>>>>>> 544f462ee01ff394a11c36d394d35dc290f83120
+
     }
     
     return int(sumQC/double(qual.length()));    //wrong, terrible hack to get avg qual because they are on a log scale
@@ -1297,11 +1256,7 @@ inline void MergeTrimReads::computeBestLikelihoodSingle(const string      & read
 #endif
 
 	double logLike=
-<<<<<<< HEAD
 	    (double( indexAdapter ) * likeRandomMatch ) //likelihood of observing the remaining bases, before the adapter
-=======
-	    (double( indexAdapter ) * likeRandomMatch ) //likelihood of remaining bases, before adapter
->>>>>>> 544f462ee01ff394a11c36d394d35dc290f83120
 	    +
 	    detectAdapter( read1 , qualv1 , options_adapter_F,avgQC,indexAdapter , &matches  );
 
@@ -1624,10 +1579,7 @@ inline void MergeTrimReads::computeConsensusPairedEnd( const string & read1,
     //test for merging:
     if( logLikelihoodTotalIdx != -1    &&                       //the status quo is not the most likely
 	//(logLikelihoodTotal/sndlogLikelihoodTotal)      < maxLikelihoodRatio &&
-<<<<<<< HEAD
 	//( (sndlogLikelihoodTotal - logLikelihoodTotal) < log10(maxLikelihoodRatio) ) &&
-=======
->>>>>>> 544f462ee01ff394a11c36d394d35dc290f83120
 	( (sndlogLikelihoodTotal - logLikelihoodTotal) < log10maxLikelihoodRatio ) &&
 	logLikelihoodTotalMatches >= int(min_overlap_seqs)  ){       //sufficient # of mismatches for partial overlap (artifically to min_overlap_seqs for complete overlap)
 
@@ -1751,17 +1703,11 @@ merged MergeTrimReads::process_SR(string  read1,
     sanityCheckLength(read1,qual1);
 
 
-<<<<<<< HEAD
 
     //vector<int> qualv1;
     vector<int> qualv1 (qual1.size(),2);
 
     int avgQC=string2NumericalQualScores(qual1,qualv1);
-=======
-    
-    vector<int> qualv1 (qual1.size(),2);
-    string2NumericalQualScores(qual1,qualv1);
->>>>>>> 544f462ee01ff394a11c36d394d35dc290f83120
     
 
     //start detecting chimera //
@@ -1814,10 +1760,7 @@ merged MergeTrimReads::process_SR(string  read1,
 
 
      if( logLikelihoodTotalIdx != -1 &&
-<<<<<<< HEAD
 	 //( (sndlogLikelihoodTotal - logLikelihoodTotal) < log10(maxLikelihoodRatio) )
-=======
->>>>>>> 544f462ee01ff394a11c36d394d35dc290f83120
 	 ( (sndlogLikelihoodTotal - logLikelihoodTotal) < log10maxLikelihoodRatio )
 	 ){
 	
@@ -1891,11 +1834,6 @@ merged MergeTrimReads::process_PE( string  read1,  string  qual1,
     }
 
 
-<<<<<<< HEAD
-    // vector<int> qualv1;
-    // vector<int> qualv2;
-=======
->>>>>>> 544f462ee01ff394a11c36d394d35dc290f83120
     vector<int> qualv1  (qual1.size(),2);
     vector<int> qualv2  (qual2.size(),2);
 
@@ -2149,7 +2087,6 @@ MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, 
      //TODO: the default values should be stored in the config.json file, not here
      max_prob_N = 0.25;
     
-<<<<<<< HEAD
      maxLikelihoodRatio       = 1.0/20.0;
      log10maxLikelihoodRatio  = log10(maxLikelihoodRatio);
 
@@ -2159,14 +2096,6 @@ MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, 
  
      minComparisonsAdapterForQuickMode = 6; // minimum number of comparisons for the adapter in quick mode
 
-=======
-     maxLikelihoodRatio      = 1.0/20.0;
-     log10maxLikelihoodRatio = log10(maxLikelihoodRatio);
-
-     fastModeProbError       = 1.0 / 100000000;
-     log10fastModeProbError  = log10(fastModeProbError);
-     
->>>>>>> 544f462ee01ff394a11c36d394d35dc290f83120
      maxadapter_comp  = 30; /**< maximum number of bases to be compared in the adapter */
      min_overlap_seqs = 10; /**< maximum number that have to match in the case of partial overlap */ 
     
