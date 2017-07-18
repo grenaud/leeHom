@@ -43,6 +43,7 @@ typedef struct {
 class MergeTrimReads{
  private:
     //VARIABLES
+<<<<<<< HEAD
 
     double maxLikelihoodRatio       ;
     double log10maxLikelihoodRatio  ;
@@ -51,6 +52,13 @@ class MergeTrimReads{
     double log10quickModeProbError  ;
     unsigned  minComparisonsAdapterForQuickMode; // minimum number of comparisons for the adapter in quick mode
 
+=======
+    double maxLikelihoodRatio  ;
+    double log10maxLikelihoodRatio  ;
+
+    double fastModeProbError  ;
+    double log10fastModeProbError  ;
+>>>>>>> 544f462ee01ff394a11c36d394d35dc290f83120
 
     double likelihoodChimera  ;
     double likelihoodAdapterSR ;
@@ -83,7 +91,7 @@ class MergeTrimReads{
     /* extern size_t min_length ; */
 
     //Chimera options and adapter
-    char*  chimInit[];/* = { */
+    //char*  chimInit[];/* = { */
      
     vector<string> adapter_chimeras ;
     string options_adapter_F;
