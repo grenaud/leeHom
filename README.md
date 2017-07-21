@@ -43,6 +43,35 @@ src/leeHomMulti
 ```
 
 
+
+## Interpreting the output using the fastq mode
+If the input is fastq, the output will also be fastq. Normally you will get different files. Here is a table explaining their meaning/content. The ** [PREFIX]** is the output prefix specified using -fqo.
+
+
+### Single-end mode:
+
+| File suffix                 | Meaning                                                                                                                                                                                                                |
+|-----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **[PREFIX].fq.gz**            | Sequences that were either trimmed or untrimmed confidently by leeHom                      |
+| **[PREFIX].fail.fq.gz**       | Sequences for which leeHom where the most likely original sequence length was **not** several fold more likely than the second most likely sequence length. The most likely sequence length is are nonetheless found in the file.                      |
+
+
+### Paired-end mode:
+
+| File suffix                 | Meaning                                                                                                                                                                                                                |
+|-----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **[PREFIX].fq.gz**            | Sequences that were either trimmed and merged confidently by leeHom                      |
+| **[PREFIX]_r1.fq.gz**         | Forward reads that were neither trimmed nor merged confidently by leeHom                      |
+| **[PREFIX]_r2.fq.gz**         | Reverse reads that were neither trimmed nor merged confidently by leeHom                      |
+
+| **[PREFIX].fail.fq.gz**       | Sequences that were either trimmed and merged confidently by leeHom but where the most likely original sequence length was **not** several fold more likely than the second most likely sequence length                      |
+| **[PREFIX]_r1.fail.fq.gz**    | Forward reads that were neither trimmed nor merged confidently by leeHom but where the most likely original sequence length was **not** several fold more likely than the second most likely sequence length                      |
+| **[PREFIX]_r2.fail.fq.gz**    | Reverse reads that were neither trimmed nor merged confidently by leeHom but where the most likely original sequence length was **not** several fold more likely than the second most likely sequence length                      |
+
+
+
+
+
 ## Interpreting the log messages
 By default, leehom prints a log messsage to stderr. leehom counts 2 paired-end reads or one single-end read as one cluster. This is how to interpret the log:
 
