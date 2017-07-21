@@ -53,7 +53,7 @@ If the input is fastq, the output will also be fastq. Normally you will get diff
 | File suffix                 | Meaning                                                                                                                                                                                                                |
 |-----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **[PREFIX].fq.gz**            | Sequences that were either trimmed or untrimmed confidently by leeHom                      |
-| **[PREFIX].fail.fq.gz**       | Sequences for which leeHom where the most likely original sequence length was **not** several fold more likely than the second most likely sequence length. The most likely sequence length is are nonetheless found in the file.                      |
+| **[PREFIX].fail.fq.gz**       | Sequences where the most likely insert (original sequence) length was **not** several fold more likely than the second most likely sequence length. The most likely sequence length is are nonetheless found in the file.                      |
 
 
 ### Paired-end mode:
@@ -63,9 +63,9 @@ If the input is fastq, the output will also be fastq. Normally you will get diff
 | **[PREFIX].fq.gz**            | Sequences that were either trimmed and merged confidently by leeHom                      |
 | **[PREFIX]_r1.fq.gz**         | Forward reads that were neither trimmed nor merged confidently by leeHom                      |
 | **[PREFIX]_r2.fq.gz**         | Reverse reads that were neither trimmed nor merged confidently by leeHom                      |
-| **[PREFIX].fail.fq.gz**       | Sequences that were either trimmed and merged confidently by leeHom but where the most likely original sequence length was **not** several fold more likely than the second most likely sequence length                      |
-| **[PREFIX]_r1.fail.fq.gz**    | Forward reads that were neither trimmed nor merged confidently by leeHom but where the most likely original sequence length was **not** several fold more likely than the second most likely sequence length                      |
-| **[PREFIX]_r2.fail.fq.gz**    | Reverse reads that were neither trimmed nor merged confidently by leeHom but where the most likely original sequence length was **not** several fold more likely than the second most likely sequence length                      |
+| **[PREFIX].fail.fq.gz**       | Sequences that were either trimmed and merged confidently by leeHom and where the most likely original sequence length was **not** several fold more likely than the second most likely sequence length                      |
+| **[PREFIX]_r1.fail.fq.gz**    | Forward reads that were neither trimmed nor merged confidently by leeHom and where the most likely original sequence length was **not** several fold more likely than the second most likely sequence length                      |
+| **[PREFIX]_r2.fail.fq.gz**    | Reverse reads that were neither trimmed nor merged confidently by leeHom and where the most likely original sequence length was **not** several fold more likely than the second most likely sequence length                      |
 
 
 
