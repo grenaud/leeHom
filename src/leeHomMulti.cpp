@@ -524,6 +524,8 @@ void *mainComputationThread(void * argc){
 
     BamAlignment al;
     BamAlignment al2;
+    BamAlignment orig;
+    BamAlignment orig2;
     bool al2Null=true;
     
     
@@ -557,8 +559,13 @@ void *mainComputationThread(void * argc){
 		bool  result =  mtr->processPair(al,al2);
 		
 		if( result ){//was merged
-		    BamAlignment orig;
-		    BamAlignment orig2;
+
+		    
+		    if(keepOrig){
+			orig =al;
+		    }
+
+		    
 		    
 		    if(keepOrig){
 			orig2 = al2;
@@ -592,7 +599,7 @@ void *mainComputationThread(void * argc){
 		//  SINGLE END
 		//
 	    }else{ 
-		BamAlignment orig;
+
 		if(keepOrig){
 		    orig =al;
 		}

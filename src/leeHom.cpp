@@ -597,6 +597,9 @@ int main (int argc, char *argv[]) {
     
 
 	BamAlignment al;
+	BamAlignment orig;
+	BamAlignment orig2;
+
 	BamAlignment al2;
 	bool al2Null=true;
     
@@ -621,18 +624,17 @@ int main (int argc, char *argv[]) {
 	    }else{
 		if(al.IsPaired() && 
 		   !al2Null){
-
+		    if(keepOrig){
+			orig = al;
+		    }
 
 		    bool  result =  mtr.processPair(al,al2);
 
 
 		    if( result ){//was merged
-			BamAlignment orig;
-			BamAlignment orig2;
 
 			if(keepOrig){
 			    orig2 = al2;
-			    orig  = al;
 			}
 
 			writer.SaveAlignment(al);
@@ -656,7 +658,7 @@ int main (int argc, char *argv[]) {
 		    //  SINGLE END
 		    //
 		}else{ 
-		    BamAlignment orig;
+
 		    if(keepOrig){
 			orig =al;
 		    }
