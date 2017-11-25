@@ -16,20 +16,10 @@ Go to https://github.com/grenaud/leeHom and do one of the following:
 Make sure you have `cmake` installed. If required, install it by
 typing `apt-get install cmake` for Ubuntu for example.
 
-1. Build Bamtools first:
-    ```bash
-    cd bamtools/
-    mkdir build/
-    cd build/
-    cmake ..
+1. Build the submodules and main code by typing :
+   
     make
-    cd ../..
-    ```
-
-2. Build the submodules and main code by typing :
-    ```bash
-    make
-    ```
+   
 
 ## Running the program:
 To launch the program simply type:
