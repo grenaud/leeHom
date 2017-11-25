@@ -1,0 +1,8 @@
+language: C++
+
+before_script: make libgab/utils.o tabixpp/tabix.o && sed -i  "s/++11/++11\ -coverage/g" Makefile
+
+script: make test
+
+after_success:
+  - bash <(curl -s https://codecov.io/bash) -t bf4a0e99-2f3c-4669-b4be-627a3d217dd7
