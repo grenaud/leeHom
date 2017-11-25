@@ -1,37 +1,41 @@
 
-BAMTOOLS= $(realpath ../bamtools/)
-LIBGAB= $(realpath ../libgab/)
+#BAMTOOLS= $(realpath ../bamtools/)
+#LIBGAB= $(realpath ../libgab/)
 
 
-CXX      = g++ # -g -pg
-CXXFLAGS+= -O3 -Wall -I${BAMTOOLS}/include/ -I${LIBGAB} -I${LIBGAB}/gzstream/  
+CXX      = g++   #-g -pg
+CXXFLAGS+= -O3 -Wall -I../bamtools/include/ -I../bamtools/src/ -I../libgab -I../libgab/gzstream/  
 LDFLAGS  = -lm -lz  -lpthread 
-LDLIBS+=  ${BAMTOOLS}/build/src/utils/CMakeFiles/BamTools-utils.dir/*cpp.o ${BAMTOOLS}/lib/libbamtools.a ${LIBGAB}/utils.o 
+LDLIBS+=  ../bamtools/build/src/utils/CMakeFiles/BamTools-utils.dir/*cpp.o ../bamtools/build/src/api/libbamtools.a ../libgab/utils.o 
 
 
 
-all:    leeHom leeHomMulti
+all:    ../bamtools/build/src/api/libbamtools.a ../libgab/utils.o MergeTrimReads.o leeHom leeHomMulti
 
 %.o: %.cpp
 	${CXX} -c ${CXXFLAGS} $^ 
 
-leeHom: leeHom.o  MergeTrimReads.o ${LIBGAB}/PutProgramInHeader.o ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o  ${LIBGAB}/gzstream/libgzstream.a
+leeHom: leeHom.o  MergeTrimReads.o ../libgab/PutProgramInHeader.o ../libgab/FastQObj.o  ../libgab/FastQParser.o  ../libgab/gzstream/libgzstream.a
 	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS)
 
 
-leeHomMulti: leeHomMulti.o  MergeTrimReads.o ${LIBGAB}/PutProgramInHeader.o  ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o ${LIBGAB}/gzstream/libgzstream.a
+leeHomMulti: leeHomMulti.o  MergeTrimReads.o ../libgab/PutProgramInHeader.o  ../libgab/FastQObj.o  ../libgab/FastQParser.o ../libgab/gzstream/libgzstream.a
 	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS) 
 
-${LIBGAB}/utils.o: ../lib/bamtools/lib/libbamtools.a  ${LIBGAB}/utils.h
-	make -C ${LIBGAB}
+../libgab/utils.h:
+	rm -rf libgab/
+	git clone --recursive https://github.com/grenaud/libgab.git ../libgab/
 
-${BAMTOOLS}/src/api/BamAlignment.h:
-	rm -rf ${BAMTOOLS}/
-	mkdir ${BAMTOOLS}/
-	git clone --recursive https://github.com/pezmaster31/bamtools.git ${BAMTOOLS}/
+../libgab/utils.o: ../bamtools/build/src/api/libbamtools.a  ../libgab/utils.h
+	make -C ../libgab
 
-${BAMTOOLS}/lib/libbamtools.a: ${BAMTOOLS}/src/api/BamAlignment.h
-	cd ${BAMTOOLS}/ && mkdir -p build/  && cd build/ && cmake .. && make && cd ../..
+../bamtools/src/api/BamAlignment.h:
+	rm -rf ../bamtools/
+	mkdir ../bamtools/
+	git clone --recursive https://github.com/pezmaster31/bamtools.git ../bamtools/
+
+../bamtools/build/src/api/libbamtools.a: ../bamtools/src/api/BamAlignment.h
+	cd ../bamtools/ && mkdir -p build/  && cd build/ && cmake .. && make && cd ../..
 
 clean:
 	rm -f leeHom leeHomMulti *.o

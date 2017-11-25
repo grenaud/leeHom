@@ -112,9 +112,8 @@ class MergeTrimReads{
     double likeRandomMatchProb;    // 1/4
     double likeRandomMisMatchProb; // 3/4
 
-    double newprob[int('T')+1][int('T')+1][MAXQCSCORE][MAXQCSCORE];
-    /* double newprob_match[int('T')][int('T')][MAXQCSCORE][MAXQCSCORE]; */
-    /* double newprob_mismatch[int('T')][int('T')][MAXQCSCORE][MAXQCSCORE]; */
+    double newprob[5][5][MAXQCSCORE][MAXQCSCORE];
+
 
     //prior dist
     long double pdfDist[MAXLENGTHSEQUENCE];    

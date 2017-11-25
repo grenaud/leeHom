@@ -280,6 +280,8 @@ void MergeTrimReads::initMerge(){
 
     //Match
     string dnaBases = "NACGT";
+    
+
     for(int i1=0;i1<int(dnaBases.size());i1++){
 	for(int i2=0;i2<int(dnaBases.size());i2++){
 
@@ -303,7 +305,7 @@ void MergeTrimReads::initMerge(){
 		    b2.qual = -1;
 
 		    baseQual RT    = cons_base_probInit(b1,b2);
-		    newprob[int(dnaBases[i1])][int(dnaBases[i2])][q1][q2] = RT.qual ;
+		    newprob[base2int(dnaBases[i1])][base2int(dnaBases[i2])][q1][q2] = RT.qual ;
 
 #ifdef  CONSBASEPROB
 		    cerr<<dnaBases[i1]<<"\t"<<dnaBases[i2]<<"\t"<<q1<<"\t"<<q2<<"\t"<<RT.qual<<endl;
@@ -475,11 +477,11 @@ inline baseQual MergeTrimReads::cons_base_prob(baseQual  base1,baseQual base2){
     if(base1.base == base2.base){
 
 	toReturn.base = base1.base;	
-	toReturn.qual = newprob[int(base1.base)][int(base2.base)][base1.qual][base2.qual];
+	toReturn.qual = newprob[base2int(base1.base)][base2int(base2.base)][base1.qual][base2.qual];
 	
     }else{
 	
-	toReturn.qual = newprob[int(base1.base)][int(base2.base)][base1.qual][base2.qual];
+	toReturn.qual = newprob[base2int(base1.base)][base2int(base2.base)][base1.qual][base2.qual];
 	if(base1.qual > base2.qual){
 	    toReturn.base = base1.base;
 	}else{
