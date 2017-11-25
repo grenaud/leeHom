@@ -26,6 +26,7 @@ using namespace BamTools;
 /* using namespace boost::math; */
 
 #define MAXLENGTHSEQUENCE 1000 //should be good for a few years for Illumina at least ...
+#define MAXQCSCORE 64
 
 
 typedef struct{
@@ -111,6 +112,9 @@ class MergeTrimReads{
     double likeRandomMatchProb;    // 1/4
     double likeRandomMisMatchProb; // 3/4
 
+    double newprob[int('T')+1][int('T')+1][MAXQCSCORE][MAXQCSCORE];
+    /* double newprob_match[int('T')][int('T')][MAXQCSCORE][MAXQCSCORE]; */
+    /* double newprob_mismatch[int('T')][int('T')][MAXQCSCORE][MAXQCSCORE]; */
 
     //prior dist
     long double pdfDist[MAXLENGTHSEQUENCE];    
@@ -125,6 +129,7 @@ class MergeTrimReads{
     inline string convert_logprob_quality(vector<int> logScores);
     inline double randomGen();
     inline baseQual cons_base_prob(baseQual  base1,baseQual base2);
+    inline baseQual cons_base_probInit(baseQual  base1,baseQual base2);
 
 
 

@@ -8,7 +8,7 @@
 //#define DEBUGOVERLAP
 // // //#define DEBUGTOTALOV
 // // #define DEBUGPARTIALOV
-// // #define CONSBASEPROB
+//#define CONSBASEPROB
 
 //#define DEBUGPR
 // #define DEBUGSCORE
@@ -278,8 +278,64 @@ void MergeTrimReads::initMerge(){
     }
 
 
+    //Match
+    string dnaBases = "NACGT";
+    for(int i1=0;i1<int(dnaBases.size());i1++){
+	for(int i2=0;i2<int(dnaBases.size());i2++){
 
-}
+	    for(int q1=0;q1<MAXQCSCORE;q1++){
+		for(int q2=0;q2<MAXQCSCORE;q2++){
+
+
+#ifdef  CONSBASEPROB
+		    cerr<<i1<<"\t"<<i2<<"\t"<<q1<<"\t"<<q2<<"\t"<<endl;
+#endif
+
+		    baseQual b1;
+		    baseQual b2;
+
+		    b1.base = dnaBases[i1];
+		    b1.prob = probForQual[ q1 ];
+		    b1.qual = -1;
+
+		    b2.base = dnaBases[i2];
+		    b2.prob = probForQual[ q2 ]; 
+		    b2.qual = -1;
+
+		    baseQual RT    = cons_base_probInit(b1,b2);
+		    newprob[int(dnaBases[i1])][int(dnaBases[i2])][q1][q2] = RT.qual ;
+
+#ifdef  CONSBASEPROB
+		    cerr<<dnaBases[i1]<<"\t"<<dnaBases[i2]<<"\t"<<q1<<"\t"<<q2<<"\t"<<RT.qual<<endl;
+#endif
+		}
+	    }
+	}
+    }
+//     //Mismatch
+//     for(int q1=0;q1<MAXQCSCORE;q1++){
+// 	for(int q2=0;q2<MAXQCSCORE;q2++){
+// 	    baseQual b1;
+// 	    baseQual b2;
+
+// 	    b1.base = 'A';
+// 	    b1.prob = probForQual[ q1 ];
+// 	    b1.qual = -1;
+
+// 	    b2.base = 'C';
+// 	    b2.prob = probForQual[ q2 ]; 
+// 	    b2.qual = -1;
+
+// 	    baseQual RT    = cons_base_probInit(b1,b2);
+// 	    newprob_mismatch[q1][q2] = RT.qual ;
+// #ifdef  CONSBASEPROB
+// 	    cerr<<"mismatch\t"<<q1<<"\t"<<q2<<"\t"<<RT.qual<<endl;
+// #endif
+
+// 	}
+//     }
+
+}//end initMerge
 
 
 
@@ -340,7 +396,7 @@ inline double MergeTrimReads::randomGen(){
 
   \return consensus base (as baseQual struct)
 */
-inline baseQual MergeTrimReads::cons_base_prob(baseQual  base1,baseQual base2){
+inline baseQual MergeTrimReads::cons_base_probInit(baseQual  base1,baseQual base2){
     const string dnaAlphabet  = "ACGT";
     
     vector<char> bases;
@@ -403,6 +459,44 @@ inline baseQual MergeTrimReads::cons_base_prob(baseQual  base1,baseQual base2){
 	    toReturn.qual = hqual;
 	}
     }
+
+    return toReturn;
+}
+
+
+
+inline baseQual MergeTrimReads::cons_base_prob(baseQual  base1,baseQual base2){
+   
+    baseQual toReturn;
+    toReturn.base='N' ;
+    toReturn.qual= -1;
+
+
+    if(base1.base == base2.base){
+
+	toReturn.base = base1.base;	
+	toReturn.qual = newprob[int(base1.base)][int(base2.base)][base1.qual][base2.qual];
+	
+    }else{
+	
+	toReturn.qual = newprob[int(base1.base)][int(base2.base)][base1.qual][base2.qual];
+	if(base1.qual > base2.qual){
+	    toReturn.base = base1.base;
+	}else{
+	    if(base1.qual < base2.qual){
+		toReturn.base = base2.base;
+	    }else{
+		//equal prob
+		if( randomGen() >=0.5 ){
+		    toReturn.base = base1.base;
+		}else{
+		    toReturn.base = base2.base;
+		}
+	    }
+	}
+    }
+
+
 
     return toReturn;
 }
@@ -1377,12 +1471,12 @@ inline void MergeTrimReads::computeConsensusPairedEnd( const string & read1,
 		    i2>=0){
 		
 		b1.base = read1[i1];
-		b1.prob = probForQual[ qualv1[i1] ];
-		b1.qual = -1;
+		//b1.prob = probForQual[ qualv1[i1] ];
+		b1.qual = qualv1[i1];
 
 		b2.base = read2_rev[i2];
-		b2.prob = probForQual[ qualv2_rev[i2] ]; 
-		b2.qual = -1;
+		//b2.prob = probForQual[ qualv2_rev[i2] ]; 
+		b2.qual = qualv2_rev[i2];
 
 		baseQual RT    = cons_base_prob(b1,b2);
 		newSeq         +=  RT.base ;
