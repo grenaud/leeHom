@@ -568,8 +568,8 @@ int main (int argc, char *argv[]) {
 
     
 
-    	string pID          = "mergeTrimReadsBAM";   
-    	string pName        = "mergeTrimReadsBAM";   
+    	string pID          = "leeHom";   
+    	string pName        = "leeHom";   
     	string pCommandLine = "";
     	for(int i=0;i<(argc);i++){
     	    pCommandLine += (string(argv[i])+" ");
@@ -637,6 +637,7 @@ int main (int argc, char *argv[]) {
 
     			if(keepOrig){
     			    orig2 = al2;
+			    al.Name = al.Name+"_M";
     			}
 
     			writer.SaveAlignment(al);
@@ -663,6 +664,7 @@ int main (int argc, char *argv[]) {
 
     		    if(keepOrig){
     			orig =al;
+			al.Name = al.Name+"_M";
     		    }
     		    mtr.processSingle(al);
 

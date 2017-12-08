@@ -570,6 +570,7 @@ void *mainComputationThread(void * argc){
 		    if(keepOrig){
 			orig2 = al2;
 			orig  = al;
+			al.Name = al.Name+"_M";
 		    }
 		    
 		    chunkToWrite->dataToProcess->push_back(al);
@@ -602,6 +603,7 @@ void *mainComputationThread(void * argc){
 
 		if(keepOrig){
 		    orig =al;
+		    al.Name = al.Name+"_M";
 		}
 		mtr->processSingle(al);
 		    
