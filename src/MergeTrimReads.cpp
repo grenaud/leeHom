@@ -10,7 +10,7 @@
 // // #define DEBUGPARTIALOV
 //#define CONSBASEPROB
 
-//#define DEBUGPR
+// #define DEBUGPR
 // #define DEBUGSCORE
 //#define CONSENSUSCALL
 
@@ -979,8 +979,9 @@ inline int MergeTrimReads::edits(const string & seq1,const string & seq2){
     int dist = lmax-lmin;
 
     for(int pos=0;pos<lmin;pos++){
+	if(seq2[pos] == 'N') continue;//skip Ns in key
 	if (seq1[pos] != seq2[pos]) 
-	    dist+=1;	
+	    dist++;	
     }
 
     return dist;
