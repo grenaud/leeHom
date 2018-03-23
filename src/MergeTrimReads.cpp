@@ -1068,9 +1068,10 @@ inline bool MergeTrimReads::checkKeyPairedEnd(string & read1,
 
     if( handle_key && read1.length() > 0){
 
-	if (((read1.substr(0,len_key1) == keys0) && (read2.substr(0,len_key2) == keys1)) || //perfect match
-	    (options_allowMissing && (edits(read1.substr(0,len_key1),keys0) == 1) && (read2.substr(0,len_key2) == keys1)) || //1mm in first key
-	    (options_allowMissing && (read1.substr(0,len_key1) == keys0) && (edits(read2.substr(0,len_key2),keys1) == 1))
+	//if (((read1.substr(0,len_key1) == keys0) && (read2.substr(0,len_key2) == keys1)) || //perfect match
+	if (( (edits(read1.substr(0,len_key1),keys0) == 0)  && (edits(read2.substr(0,len_key2),keys1) == 0)  ) || //perfect match
+	    (options_allowMissing && (edits(read1.substr(0,len_key1),keys0) == 1) && (edits(read2.substr(0,len_key2),keys1) == 0) )||  //&& (read2.substr(0,len_key2) == keys1)) || //1mm in first key
+	    (options_allowMissing && (edits(read1.substr(0,len_key1),keys0) == 0) && (edits(read2.substr(0,len_key2),keys1) == 1) ) // (read1.substr(0,len_key1) == keys0)
 	    ){ //1mm in second key
 	    qual1 = qual1.substr(len_key1,read1.size()-len_key1);
 	    read1 = read1.substr(len_key1,read1.size()-len_key1);
