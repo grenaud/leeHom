@@ -1239,12 +1239,14 @@ int main (int argc, char *argv[]) {
     bool ancientDNA=false;
     bool keepOrig=false;
 
-    string adapter_F=options_adapter_F_BAM;
-    string adapter_S=options_adapter_S_BAM;
+    string adapter_F      =options_adapter_F_BAM;
+    string adapter_S      =options_adapter_S_BAM;
     string adapter_chimera=options_adapter_chimera_BAM;
     string key="";
-    bool allowMissing=false;
-    int trimCutoff=1;
+    bool   trimKey=false;
+    
+    bool   allowMissing=false;
+    int    trimCutoff=1;
 
     bool allowAligned=false;
     bool printLog=false;
@@ -1309,6 +1311,8 @@ int main (int argc, char *argv[]) {
 			      "\t\t"+"-s , --adapterSecondRead" +"\t\t"+"Adapter that is observed after the reverse read (def. Multiplex: "+options_adapter_S_BAM.substr(0,30)+")"+"\n"+
 			      "\t\t"+"-c , --FirstReadChimeraFilter" +"\t\t"+"If the forward read looks like this sequence, the cluster is filtered out.\n\t\t\t\t\t\t\tProvide several sequences separated by comma (def. Multiplex: "+options_adapter_chimera_BAM.substr(0,30)+")"+"\n"+
 			      "\t\t"+"-k , --key"+"\t\t\t\t"+"Key sequence with which each sequence starts. Comma separate for forward and reverse reads. (default '"+key+"')"+"\n"+
+			      "\t\t"+"--trimkey"     +"\t\t\t\t"+"Trim the key sequence even for untrimmed. (default '"+boolStringify(trimKey)+"')"+"\n"+
+
 			      "\t\t"+"-i , --allowMissing"+"\t\t\t"+"Allow one base in one key to be missing or wrong. (default "+boolStringify(allowMissing)+")"+"\n"+
 			      "\t\t"+"--trimCutoff"+"\t\t\t"+"Lowest number of adapter bases to be observed for single Read trimming (default "+stringify(trimCutoff)+")");
 
@@ -1459,7 +1463,11 @@ int main (int argc, char *argv[]) {
 	    i++;
 	    continue;
 	}
-	
+
+	if(strcmp(argv[i],"--trimkey") ==0 ){
+	    trimKey=true;
+	    continue;
+	}
 
 	if(strcmp(argv[i],"-i") == 0 || strcmp(argv[i],"--allowMissing") == 0 ){
 	    allowMissing=true;
@@ -1837,9 +1845,13 @@ int main (int argc, char *argv[]) {
 
 				}else{ //keep as is
 				    mtr->incrementCountnothing();
-			    
-				    onereadgroup.pairr2<<""<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
-				    onereadgroup.pairr1<<""<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
+				    if(trimKey){
+					onereadgroup.pairr2<<""<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<endl <<dataToWrite->dataToProcess->at(i).s2.substr( key2.length() )<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2.substr( key2.length() )<<endl;
+					onereadgroup.pairr1<<""<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<endl <<dataToWrite->dataToProcess->at(i).s1.substr( key1.length() )<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1.substr( key1.length() )<<endl;
+				    }else{
+					onereadgroup.pairr2<<""<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<endl <<dataToWrite->dataToProcess->at(i).s2                        <<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2                        <<endl;
+					onereadgroup.pairr1<<""<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<endl <<dataToWrite->dataToProcess->at(i).s1                        <<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1                        <<endl;
+				    }
 			    
 				}
 			    }
@@ -1869,7 +1881,11 @@ int main (int argc, char *argv[]) {
 				onereadgroup.single<<""<<dataToWrite->dataToProcess->at(i).d1<<"" <<endl << dataToWrite->dataToProcess->at(i).sequence <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).quality<<endl;
 			    }else{
 				mtr->incrementCountnothing();
-				onereadgroup.single<<""<<dataToWrite->dataToProcess->at(i).d1<<"" <<endl << dataToWrite->dataToProcess->at(i).s1       <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1     <<endl;
+				if(trimKey){
+				    onereadgroup.single<<""<<dataToWrite->dataToProcess->at(i).d1<<"" <<endl << dataToWrite->dataToProcess->at(i).s1.substr( key1.length() )<<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1.substr( key1.length() )<<endl;
+				}else{
+				    onereadgroup.single<<""<<dataToWrite->dataToProcess->at(i).d1<<"" <<endl << dataToWrite->dataToProcess->at(i).s1                        <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1                        <<endl;
+				}
 			    }
 			}
 			

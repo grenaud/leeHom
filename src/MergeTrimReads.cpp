@@ -1917,6 +1917,7 @@ bool MergeTrimReads::set_extra_flag( BamAlignment &al, int32_t f )
   \param chimera_ A string of comma separated substring representing putative chimeras
   \param key1_ If keying was used, sequence of the key for the first read
   \param key2_ If keying was used, sequence of the key for the seonc read
+
   \param trimcutoff The minimum number of bases we should have observed for single reads
   \param allowMissing boolean, if set to true, it will allow imperfect matches to the key
   \param mergeoverlap boolean, if set to true, it will allow merging of reads where the adapter was never seen and the reconstructed sequence is longer than the initial reads

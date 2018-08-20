@@ -87,6 +87,8 @@ int main (int argc, char *argv[]) {
     string adapter_S=options_adapter_S_BAM;
     string adapter_chimera=options_adapter_chimera_BAM;
     string key="";
+    bool   trimKey=false;
+
     bool allowMissing=false;
     int trimCutoff=1;
 
@@ -150,6 +152,9 @@ int main (int argc, char *argv[]) {
     			      "\t\t"+"-s , --adapterSecondRead" +"\t\t"+"Adapter that is observed after the reverse read (def. Multiplex: "+options_adapter_S_BAM.substr(0,30)+")"+"\n"+
     			      "\t\t"+"-c , --FirstReadChimeraFilter" +"\t\t"+"If the forward read looks like this sequence, the cluster is filtered out.\n\t\t\t\t\t\t\tProvide several sequences separated by comma (def. Multiplex: "+options_adapter_chimera_BAM.substr(0,30)+")"+"\n"+
     			      "\t\t"+"-k , --key"+"\t\t\t\t"+"Key sequence with which each sequence starts. Comma separate for forward and reverse reads. (default '"+key+"')"+"\n"+
+			      "\t\t"+"--trimkey"     +"\t\t\t\t"+"Trim the key sequence even for untrimmed. (default '"+boolStringify(trimKey)+"')"+"\n"+
+
+			      
     			      "\t\t"+"-i , --allowMissing"+"\t\t\t"+"Allow one base in one key to be missing or wrong. (default "+boolStringify(allowMissing)+")"+"\n"+
     			      "\t\t"+"--trimCutoff"+"\t\t\t"+"Lowest number of adapter bases to be observed for single Read trimming (default "+stringify(trimCutoff)+")");
 
@@ -281,6 +286,10 @@ int main (int argc, char *argv[]) {
     	    continue;
     	}
 	
+	if(strcmp(argv[i],"--trimkey") ==0 ){
+	    trimKey=true;
+	    continue;
+	}
 
     	if(strcmp(argv[i],"-i") == 0 || strcmp(argv[i],"--allowMissing") == 0 ){
     	    allowMissing=true;
@@ -474,9 +483,13 @@ int main (int argc, char *argv[]) {
     			}else{ //keep as is
     			    mtr.incrementCountnothing();
 
-    			    onereadgroup.pairr2<<"@"<<def2s<<"/2" <<endl <<*(fo2->getSeq())<<endl<<"+"<<endl <<*(fo2->getQual())<<endl;
-    			    onereadgroup.pairr1<<"@"<<def1s<<"/1" <<endl <<*(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
-			    
+			    if(trimKey){
+				onereadgroup.pairr2<<"@"<<def2s<<"/2" <<endl << (fo2->getSeq())->substr( key2.length() ) <<endl<<"+"<<endl <<(fo2->getQual())->substr( key2.length() )<<endl;
+				onereadgroup.pairr1<<"@"<<def1s<<"/1" <<endl << (fo1->getSeq())->substr( key1.length() ) <<endl<<"+"<<endl <<(fo1->getQual())->substr( key1.length() )<<endl;
+			    }else{
+				onereadgroup.pairr2<<"@"<<def2s<<"/2" <<endl <<*(fo2->getSeq())                          <<endl<<"+"<<endl <<*(fo2->getQual())                        <<endl;
+				onereadgroup.pairr1<<"@"<<def1s<<"/1" <<endl <<*(fo1->getSeq())                          <<endl<<"+"<<endl <<*(fo1->getQual())                        <<endl;
+			    }
 
     			}
     		}
@@ -509,7 +522,11 @@ int main (int argc, char *argv[]) {
     		    onereadgroup.single<<""<<*(fo1->getID())<<"" <<endl << result.sequence<<endl<<"+"<<endl <<result.quality<<endl;
     		}else{
     		    mtr.incrementCountnothing();
-    		    onereadgroup.single<<""<<*(fo1->getID())<<"" <<endl << *(fo1->getSeq())<<endl<<"+"<<endl <<*(fo1->getQual())<<endl;
+		    if(trimKey){
+			onereadgroup.single<<""<<(fo1->getID())<<"" << endl <<  (fo1->getSeq())->substr( key1.length() )<<endl<<"+"<<endl << (fo1->getQual())->substr( key1.length() )<<endl;
+		    }else{
+			onereadgroup.single<<""<<*(fo1->getID())<<"" <<endl << *(fo1->getSeq())                         <<endl<<"+"<<endl <<*(fo1->getQual())                         <<endl;
+		    }
     		}
 
     	    }
