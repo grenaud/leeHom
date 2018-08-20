@@ -1686,7 +1686,7 @@ merged MergeTrimReads::process_PE( string  read1,  string  qual1,
 				   string  read2,  string  qual2){
 
 
-
+    //cerr<<"1:"<<read1<<" 2:"<<read2<<endl;
 
     merged toReturn;
 
@@ -1924,12 +1924,13 @@ bool MergeTrimReads::set_extra_flag( BamAlignment &al, int32_t f )
 */
 MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, const string& chimera_,
 				const string& key1_, const string& key2_,
+				const bool trimKey_,
 				int trimcutoff_,bool allowMissing_,
 				bool ancientDNA_,double location_,double scale_,bool useDist_,int qualOffset):
     //bool mergeoverlap_) : 
     min_length (5),
     qualOffset (qualOffset),
-
+    trimKey(trimKey_),
 
 
     //FLAGs for merged reads
@@ -2048,7 +2049,8 @@ MergeTrimReads::~MergeTrimReads (){
 */
 //pair<BamAlignment,BamAlignment> MergeTrimReads::processPair(const BamAlignment & al,const BamAlignment & al2){
 bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
-    
+    //cerr<<len_key1<<" "<<len_key2<<" "<<al.QueryBases<<" "<<al2.QueryBases<<endl;
+
     string read1;
     string read2;
     string qual1;
@@ -2288,6 +2290,29 @@ bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
 	
 	// return 	pair<BamAlignment,BamAlignment>(al,al2);
 
+
+	if(trimKey){
+	    //cerr<<len_key1<<" "<<len_key2<<" "<<al.QueryBases<<" "<<al2.QueryBases<<endl;
+	    if(al.IsFirstMate()  &&
+	       al2.IsSecondMate() ){
+		al.QueryBases  = al.QueryBases.substr(  len_key1 );
+		al.Qualities   = al.Qualities.substr(   len_key1 );
+		al2.QueryBases = al2.QueryBases.substr( len_key2 );
+		al2.Qualities  = al2.Qualities.substr(  len_key2 );
+	    }else{
+		if(al2.IsFirstMate()  &&
+		   al.IsSecondMate() ){
+		    al.QueryBases  = al.QueryBases.substr(  len_key2 );
+		    al.Qualities   = al.Qualities.substr(   len_key2 );
+		    al2.QueryBases = al2.QueryBases.substr( len_key1 );
+		    al2.Qualities  = al2.Qualities.substr(  len_key1 );
+		}else{
+		    cerr << "Seq#1 must be the first mate for seq #2, exiting " << endl;
+		    exit(1);
+		}
+	    }
+
+	}
 	//writer.SaveAlignment(al2);
 	//writer.SaveAlignment(al);
 	return false;
@@ -2386,6 +2411,10 @@ void MergeTrimReads::processSingle(BamAlignment & al){
 	if( result.code == ' ')
 	    count_nothing++;
 
+	if(trimKey){
+	    al.QueryBases  = al.QueryBases.substr(  len_key1 );
+	    al.Qualities   = al.Qualities.substr(   len_key1 );
+	}
 	//return al;
     }
 

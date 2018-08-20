@@ -337,7 +337,7 @@ int main (int argc, char *argv[]) {
 
 
     MergeTrimReads mtr (adapter_F,adapter_S,adapter_chimera,
-    			key1,key2,
+    			key1,key2,trimKey,
     			trimCutoff,allowMissing,ancientDNA,location,scale,useDist,qualOffset);
 
     fqwriters onereadgroup;
