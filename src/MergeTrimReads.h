@@ -59,6 +59,7 @@ class MergeTrimReads{
 
     const size_t min_length   ;
     const int    qualOffset    ;
+    bool trimKey;
 
     /* static const double max_prob_N = 0.25; */
     /* extern double cutoff_merge_trim; */
@@ -248,7 +249,6 @@ class MergeTrimReads{
     double scale;
     bool   useDist;
     //lognormal_distribution<> p;
-    bool trimKey=false;
 
  public:
     MergeTrimReads (const string& forward_, const string& reverse_, const string& chimera_,
