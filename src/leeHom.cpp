@@ -487,7 +487,7 @@ int main (int argc, char *argv[]) {
 				onereadgroup.pairr2<<"@"<<def2s<<"/2" <<endl << (fo2->getSeq())->substr( key2.length() ) <<endl<<"+"<<endl <<(fo2->getQual())->substr( key2.length() )<<endl;
 				onereadgroup.pairr1<<"@"<<def1s<<"/1" <<endl << (fo1->getSeq())->substr( key1.length() ) <<endl<<"+"<<endl <<(fo1->getQual())->substr( key1.length() )<<endl;
 			    }else{
-				onereadgroup.pairr2<<"@"<<def2s<<"/2" <<endl <<*(fo2->getSeq())                          <<endl<<"+"<<endl <<*(fo2->getQual())                        `<<endl;
+				onereadgroup.pairr2<<"@"<<def2s<<"/2" <<endl <<*(fo2->getSeq())                          <<endl<<"+"<<endl <<*(fo2->getQual())                        <<endl;
 				onereadgroup.pairr1<<"@"<<def1s<<"/1" <<endl <<*(fo1->getSeq())                          <<endl<<"+"<<endl <<*(fo1->getQual())                        <<endl;
 			    }
 
