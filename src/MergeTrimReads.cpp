@@ -2429,8 +2429,15 @@ void MergeTrimReads::processSingle(BamAlignment & al){
   \return A string reprenting the tally for the reads
 */
 string MergeTrimReads::reportSingleLine(){
-    return "Total " + stringify( count_all ) +"; Merged (trimming) "+ stringify(count_merged  ) +"; Merged (overlap) "+ stringify(count_merged_overlap  ) +"; Kept PE/SR "+ stringify( count_nothing ) +"; Trimmed SR "+ stringify(count_trimmed  ) +"; Adapter dimers/chimeras "+ stringify(count_chimera  ) +"; Failed Key "+ stringify(count_fkey  ) ;
-
+    return 
+	"Total " + stringify( count_all ) +
+	"; Merged (trimming) "+ stringify(count_merged  ) +
+	"; Merged (overlap) "+ stringify(count_merged_overlap  ) +
+	"; Kept PE/SR "+ stringify( count_nothing ) +
+	"; Trimmed SR "+ stringify(count_trimmed  ) +
+	"; Adapter dimers/chimeras "+ stringify(count_chimera  ) +
+	"; Failed Key "+ stringify(count_fkey  ) +
+	"; UMI problems "+ stringify(count_UMIp  );
 }
 
 
@@ -2447,7 +2454,8 @@ string MergeTrimReads::reportMultipleLines(){
 	    "Kept PE/SR "              +stringify(count_nothing)+       "\t"+stringify(100.0*double(count_nothing)       /double(count_all))+"%\n"+
 	    "Trimmed SR "              +stringify(count_trimmed)+       "\t"+stringify(100.0*double(count_trimmed)       /double(count_all))+"%\n"+
 	    "Adapter dimers/chimeras " +stringify(count_chimera)+       "\t"+stringify(100.0*double(count_chimera)       /double(count_all))+"%\n"+
-	"Failed Key "              +stringify(count_fkey)+          "\t"+stringify(100.0*double(count_fkey)          /double(count_all))+"%\n";
+            "Failed Key "              +stringify(count_fkey)+          "\t"+stringify(100.0*double(count_fkey)          /double(count_all))+"%\n"+
+            "UMI problems "            +stringify(count_UMIp)+          "\t"+stringify(100.0*double(count_UMIp)          /double(count_all))+"%\n";
 }
 
 
@@ -2461,6 +2469,7 @@ int MergeTrimReads::getCountmergedoverlap(){  return count_merged_overlap; }
 int MergeTrimReads::getCounttrimmed(){        return count_trimmed; }
 int MergeTrimReads::getCountnothing(){        return count_nothing; }
 int MergeTrimReads::getCountchimera(){        return count_chimera; }
+int MergeTrimReads::getCountUMIp(){           return count_UMIp; }
 
 
 void MergeTrimReads::incrementCountall(){             count_all++;            }
@@ -2470,3 +2479,4 @@ void MergeTrimReads::incrementCountmergedoverlap(){   count_merged_overlap++; }
 void MergeTrimReads::incrementCounttrimmed(){         count_trimmed++;        }
 void MergeTrimReads::incrementCountnothing(){         count_nothing++;        }
 void MergeTrimReads::incrementCountchimera(){         count_chimera++;        }
+void MergeTrimReads::incrementCountUMIp(){            count_UMIp++;            }

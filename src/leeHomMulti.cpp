@@ -45,6 +45,28 @@ typedef struct {
 } fqwriters;
 
 
+struct argspthread {
+    bool  keepOrig;
+    bool  singleEndModeFQ;
+    unsigned int umif;
+    unsigned int umir;
+};
+
+// https://samtools.github.io/hts-specs/SAMtags.pdf
+// RX:Z:sequence+ Sequence bases from the unique molecular identifier. These could be either corrected or
+// uncorrected. Unlike MI, the value may be non-unique in the file. Should be comprised of a sequence of
+// bases. In the case of multiple unique molecular identifiers (e.g., one on each end of the template) the
+// recommended implementation concatenates all the barcodes with a hyphen (-) between the different
+// barcodes.
+// If the bases represent corrected bases, the original sequence can be stored in OX (similar to OQ storing
+// the original qualities of bases.)
+//
+// QX:Z:qualities+ Phred quality of the unique molecular identifier sequence in the RX tag. Same encoding
+// as QUAL, i.e., Phred score + 33. The qualities here may have been corrected (Raw bases and qualities
+// can be stored in OX and BZ respectively.) The lengths of the QX and the RX tags must match. In the
+// case of multiple unique molecular identifiers (e.g., one on each end of the template) the recommended
+// implementation concatenates all the quality strings with a space (' ') between the different strings.
+
 MergeTrimReads * mtr;
 string options_adapter_F_BAM="AGATCGGAAGAGCACACGTCTGAACTCCAGTCACIIIIIIIATCTCGTATGCCGTCTTCTGCTTG";
 string options_adapter_S_BAM="AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGATCTCGGTGGTCGCCGTATCATTT";
@@ -153,6 +175,8 @@ class fqrecord{
     string d2;
     string s2;
     string q2;
+    string cmt;
+    
 
     bool paired;
 };
@@ -423,9 +447,14 @@ void forceInsertProcedureFQ(DataChunkFQ * chunkToWrite,int rankThread){
 
 */				
 void *mainComputationThread(void * argc){    
-    bool * keepOrigAddr = (bool *)argc;
-    bool   keepOrig     = *keepOrigAddr;
+    //bool * keepOrigAddr = (bool *)argc;
+    //bool   keepOrig     = *keepOrigAddr;
 
+    bool keepOrig = ((struct argspthread*)argc)->keepOrig;
+    unsigned int umif      = ((struct argspthread*)argc)->umif;
+    unsigned int umir      = ((struct argspthread*)argc)->umir;
+    bool umi      = ((umif+umir)>0);
+    
     int   rc;
     int rankThread=0;
 
@@ -527,6 +556,10 @@ void *mainComputationThread(void * argc){
     BamAlignment orig;
     BamAlignment orig2;
     bool al2Null=true;
+    string umifS;
+    string umirS;
+    string umifQ;
+    string umirQ;
     
     
     for(unsigned i=0;i<currentChunk->dataToProcess->size();i++){
@@ -555,22 +588,61 @@ void *mainComputationThread(void * argc){
 	}else{
 	    if(al.IsPaired() && 
 	       !al2Null){
-		
+				
+		if(keepOrig){
+		    orig =al;
+		}
+
 		bool  result =  mtr->processPair(al,al2);
-		
+
 		if( result ){//was merged
 
-		    
-		    if(keepOrig){
-			orig =al;
-		    }
-
-		    
-		    
 		    if(keepOrig){
 			orig2 = al2;
-			orig  = al;
 			al.Name = al.Name+"_M";
+		    }
+
+		    if( umi ){
+
+			if( al.QueryBases.length() > (umif+umir)){
+			    if(umif != 0){	    
+				umifS         = al.QueryBases.substr(0,umif);
+				umifQ         = al.Qualities.substr( 0,umif);
+
+				al.QueryBases = al.QueryBases.substr(umif);
+				al.Qualities  = al.Qualities.substr( umif);
+
+				if(umir == 0){	//no reverse UMI, add the tags now
+				    if(!al.AddTag("RX","Z",umifS)){ cerr << "Error while editing RX tags for UMI:"<<umifS<<"#"<< endl; exit(1);   }				    
+				    if(!al.AddTag("QX","Z",umifQ)){ cerr << "Error while editing QX tags for UMI:"<<umifQ<<"#"<< endl; exit(1);   }
+				}
+
+			    }
+
+			    if(umir != 0){
+				umirS         = al.QueryBases.substr(al.QueryBases.length()-umir,  umir);
+				umirQ         = al.Qualities.substr( al.Qualities.length() -umir,  umir);
+			    
+				al.QueryBases = al.QueryBases.substr(0,al.QueryBases.length()-umir);
+				al.Qualities  = al.Qualities.substr(0, al.Qualities.length() -umir);
+
+				if(umif == 0){	//no forward UMI, just add the reverse
+				    				    
+				    if(!al.AddTag("RX","Z",umirS)){ cerr << "Error while editing RX tags for UMI:"<<umirS<<"#"<< endl;	exit(1);   }				    
+				    if(!al.AddTag("QX","Z",umirQ)){ cerr << "Error while editing QX tags for UMI:"<<umirQ<<"#"<< endl;	exit(1);   }
+
+				}else{
+				    //add both umif and umir
+				    				    				    
+				    if(!al.AddTag("RX","Z",umifS+"-"+umirS)){ cerr << "Error while editing RX tags for UMI:"<<umifS<<"-"<<umirS<<"#"<< endl; exit(1);    }				    
+				    if(!al.AddTag("QX","Z",umifQ+" "+umirQ)){ cerr << "Error while editing QX tags for UMI:"<<umirQ<<" "<<umirQ<<"#"<< endl; exit(1);    }
+				    
+				}
+			    }
+			}else{//the new fragment is shorter than both umis
+			    //leave but fail QC
+			    al.SetIsDuplicate(true);
+			}
 		    }
 		    
 		    chunkToWrite->dataToProcess->push_back(al);
@@ -589,6 +661,48 @@ void *mainComputationThread(void * argc){
 		}else{
 		    //keep the sequences as pairs
 
+		    
+		    if(umif != 0){	    
+			//al2 is the fwd read
+			umifS          = al2.QueryBases.substr(0,umif);
+			umifQ          = al2.Qualities.substr( 0,umif);
+			
+			al2.QueryBases = al2.QueryBases.substr(umif);
+			al2.Qualities  = al2.Qualities.substr( umif);
+			
+			if(umir == 0){	//no reverse UMI, add the tags now
+			    if(!al.AddTag("RX","Z",umifS)){  cerr << "Error while editing RX tags for UMI:"<<umifS<<"#"<< endl; exit(1);   }				    
+			    if(!al.AddTag("QX","Z",umifQ)){  cerr << "Error while editing QX tags for UMI:"<<umifQ<<"#"<< endl; exit(1);   }
+			    if(!al2.AddTag("RX","Z",umifS)){ cerr << "Error while editing RX tags for UMI:"<<umifS<<"#"<< endl; exit(1);   }				    
+			    if(!al2.AddTag("QX","Z",umifQ)){ cerr << "Error while editing QX tags for UMI:"<<umifQ<<"#"<< endl; exit(1);   }
+			}			
+		    }
+
+		    if(umir != 0){
+			//al is the reverse read
+			umirS          = reverseComplement(al.QueryBases.substr(0,umir));
+			umirQ          =                   al.Qualities.substr( 0,umir);
+			reverse(umirQ.begin(),umirQ.end());
+			
+			al.QueryBases  = al.QueryBases.substr(umir);
+			al.Qualities   = al.Qualities.substr( umir) ;
+
+			
+			if(umif == 0){	//no forward UMI, just add the reverse
+			    if(!al.AddTag("RX","Z",umirS)){  cerr << "Error while editing RX tags for UMI:"<<umirS<<"#"<< endl;	exit(1);   }				    
+			    if(!al.AddTag("QX","Z",umirQ)){  cerr << "Error while editing QX tags for UMI:"<<umirQ<<"#"<< endl;	exit(1);   }
+			    if(!al2.AddTag("RX","Z",umirS)){ cerr << "Error while editing RX tags for UMI:"<<umirS<<"#"<< endl;	exit(1);   }				    
+			    if(!al2.AddTag("QX","Z",umirQ)){ cerr << "Error while editing QX tags for UMI:"<<umirQ<<"#"<< endl;	exit(1);   }
+			}else{
+			    //add both umif and umir
+			    if(!al.AddTag("RX","Z",umifS+"-"+umirS)){  cerr << "Error while editing RX tags for UMI:"<<umifS<<"-"<<umirS<<"#"<< endl; exit(1);    }				    
+			    if(!al.AddTag("QX","Z",umifQ+" "+umirQ)){  cerr << "Error while editing QX tags for UMI:"<<umirQ<<" "<<umirQ<<"#"<< endl; exit(1);    }
+			    if(!al2.AddTag("RX","Z",umifS+"-"+umirS)){ cerr << "Error while editing RX tags for UMI:"<<umifS<<"-"<<umirS<<"#"<< endl; exit(1);    }				    
+			    if(!al2.AddTag("QX","Z",umifQ+" "+umirQ)){ cerr << "Error while editing QX tags for UMI:"<<umirQ<<" "<<umirQ<<"#"<< endl; exit(1);    }
+			}
+
+		    }
+		    
 		    // writer.SaveAlignment(al2);		    
 		    // writer.SaveAlignment(al);
 		    chunkToWrite->dataToProcess->push_back(al2);
@@ -605,14 +719,61 @@ void *mainComputationThread(void * argc){
 		    orig =al;
 		    al.Name = al.Name+"_M";
 		}
+		unsigned int orgL=al.QueryBases.length();		
 		mtr->processSingle(al);
-		    
+		unsigned int newL=al.QueryBases.length();
+				
 		if(keepOrig){
 		    //write duplicate
-		    if(orig.QueryBases.length()  != al.QueryBases.length()){
+		    if(orgL  != newL){
 			orig.SetIsDuplicate(true);
-			//writer.SaveAlignment(orig);
 			chunkToWrite->dataToProcess->push_back(orig);
+		    }
+		}
+		//if(!al.AddTag("RX","Z",umifS)){ cerr << "Error while editing tags for UMI:"<<umifS<<"#"<< endl;  exit(1); }
+
+		
+		if(umif != 0){	    
+		    if(al.QueryBases.length() < (umif+umir) ){//the new fragment is shorter than both umis, cannot trim 
+			al.SetIsDuplicate(true);  //leave but fail QC
+		    }else{				    
+			umifS         = al.QueryBases.substr(0,umif);
+			umifQ         = al.Qualities.substr(0, umif);
+
+			al.QueryBases = al.QueryBases.substr(umif);
+			al.Qualities  = al.Qualities.substr( umif);
+
+			if(umir == 0){	//no reverse UMI, add the tags now
+			    if(!al.AddTag("RX","Z",umifS)){  cerr << "Error while editing RX tags for UMI:"<<umifS<<"#"<< endl; exit(1);   }				    
+			    if(!al.AddTag("QX","Z",umifQ)){  cerr << "Error while editing QX tags for UMI:"<<umifQ<<"#"<< endl; exit(1);   }
+			}	
+		    }
+		}
+
+		if(umir != 0){	    
+		    if(al.QueryBases.length() < (umif+umir) ){//the new fragment is shorter than both umis, cannot trim 
+			al.SetIsDuplicate(true);  //leave but fail QC
+		    }else{				    
+			if(orgL  != newL){//was trimmed
+			    umirS         = al.QueryBases.substr(al.QueryBases.length()-umir,  umir);
+			    umirQ         = al.Qualities.substr( al.Qualities.length() -umir,  umir);
+			
+			    al.QueryBases = al.QueryBases.substr(0,al.QueryBases.length()-umir);
+			    al.Qualities  = al.Qualities.substr( 0,al.Qualities.length() -umir);
+			}else{//if wasn't trimmed we do not know the rev UMI, add Ns
+			    umirS         = string(umir, 'N');
+			    umirQ         = string(umir, '!');
+			}
+		
+			if(umif == 0){	//no forward UMI, just add the reverse
+			    if(!al.AddTag("RX","Z",umirS)){  cerr << "Error while editing RX tags for UMI:"<<umirS<<"#"<< endl;	exit(1);   }				    
+			    if(!al.AddTag("QX","Z",umirQ)){  cerr << "Error while editing QX tags for UMI:"<<umirQ<<"#"<< endl;	exit(1);   }
+			}else{
+			    //add both umif and umir
+			    if(!al.AddTag("RX","Z",umifS+"-"+umirS)){  cerr << "Error while editing RX tags for UMI:"<<umifS<<"-"<<umirS<<"#"<< endl; exit(1);    }				    
+			    if(!al.AddTag("QX","Z",umifQ+" "+umirQ)){  cerr << "Error while editing QX tags for UMI:"<<umirQ<<" "<<umirQ<<"#"<< endl; exit(1);    }
+			}
+	
 		    }
 		}
 
@@ -730,9 +891,14 @@ void *mainComputationThread(void * argc){
 
 */				
 void *mainComputationThreadFQ(void * argc){    
-    bool * singleEndModeFQAddr = (bool *)argc;
-    bool   singleEndModeFQ     = *singleEndModeFQAddr;
+    // bool * singleEndModeFQAddr = (bool *)argc;
+    // bool   singleEndModeFQ     = *singleEndModeFQAddr;
 
+    bool   singleEndModeFQ = ((struct argspthread*)argc)->singleEndModeFQ;
+    unsigned int    umif   = ((struct argspthread*)argc)->umif;
+    unsigned int    umir   = ((struct argspthread*)argc)->umir;
+    bool   umi             = ((umif+umir)>0);
+    
     int   rc;
     int rankThread=0;
 
@@ -824,7 +990,13 @@ void *mainComputationThreadFQ(void * argc){
     //                BEGIN COMPUTATION                         //
     //////////////////////////////////////////////////////////////
     DataChunkFQ * chunkToWrite = new DataChunkFQ(currentChunk->rank);
-
+    string umifS;
+    string umirS;
+    string umifQ;
+    string umirQ;
+    
+    string cmt;
+    // if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence			    
     
     
     for(unsigned i=0;i<currentChunk->dataToProcess->size();i++){
@@ -839,11 +1011,111 @@ void *mainComputationThreadFQ(void * argc){
 	    merged result=	mtr->process_PE(currentChunk->dataToProcess->at(i).s1,currentChunk->dataToProcess->at(i).q1,
 						currentChunk->dataToProcess->at(i).s2,currentChunk->dataToProcess->at(i).q2);
 	    
-	    mtr->incrementCountall();
+	    
+
+	    if(umi){
+		cmt.clear();
+	        if( result.sequence != ""){//has new sequence
+
+		    if( result.sequence.length() < (umif+umir) ){//the resulting read is too short
+			if( result.code == ' '){
+			    result.code = 'U';
+			}
+
+			if(umif != 0 && umir != 0){
+			    cmt = cmt+"\tRX:Z:"+string(umif, 'N')+"-"+string(umir, 'N');
+			    cmt = cmt+"\tQX:Z:"+string(umif, '!')+" "+string(umir, '!');
+			}
+
+			if(umif != 0 && umir == 0){
+			    cmt = cmt+"\tRX:Z:"+string(umif, 'N');
+			    cmt = cmt+"\tQX:Z:"+string(umif, '!');
+			}
+
+			if(umif == 0 && umir != 0){
+			    cmt = cmt+"\tRX:Z:"+string(umir, 'N');
+			    cmt = cmt+"\tQX:Z:"+string(umir, '!');
+			}
+			
+		    }else{//resulting read is at least the size of both UMIs
+
+			//if UMI forward
+			if(umif != 0){	    
+			    umifS           = result.sequence.substr(0,umif);
+			    umifQ           = result.quality.substr(0, umif);
+
+			    result.sequence = result.sequence.substr(umif);
+			    result.quality  = result.quality.substr( umif);
+			    
+			    if(umir == 0){//add them now
+				cmt = cmt+"\tRX:Z:"+umifS;
+				cmt = cmt+"\tQX:Z:"+umifQ;
+			    }			    
+			}
+			
+			//if UMI reverse
+			if(umir != 0){
+			    umirS           = result.sequence.substr(  result.sequence.length()-umir,  umir);
+			    umirQ           = result.quality.substr(   result.quality.length() -umir,  umir);
+			    
+			    result.sequence = result.sequence.substr(0,result.sequence.length()-umir);
+			    result.quality  = result.quality.substr(0, result.quality.length() -umir);
+			    
+			    if(umif != 0){
+				cmt = cmt+"\tRX:Z:"+umifS+"-"+umirS;
+				cmt = cmt+"\tQX:Z:"+umifQ+" "+umirQ;
+			    }else{//no fwd UMI				
+				cmt = cmt+"\tRX:Z:"+umirS;
+				cmt = cmt+"\tQX:Z:"+umirQ;
+			    }
+			}
+		    }
+
+		}else{
+		    //kept as pairs
+		    
+		    if(umif != 0){
+			//cut
+			umifS                                 = currentChunk->dataToProcess->at(i).s1.substr(0,  umif);
+			umifQ                                 = currentChunk->dataToProcess->at(i).q1.substr(0,  umif);
+			
+			currentChunk->dataToProcess->at(i).s1 = currentChunk->dataToProcess->at(i).s1.substr(umif);
+			currentChunk->dataToProcess->at(i).q1 = currentChunk->dataToProcess->at(i).q1.substr(umif);	 	
+
+			if(umir == 0){//add them now
+			    cmt = cmt+"\tRX:Z:"+umifS;
+			    cmt = cmt+"\tQX:Z:"+umifQ;
+			}	
+		    }
+		    
+
+		    if(umir != 0){
+			umirS                                 = reverseComplement(currentChunk->dataToProcess->at(i).s2.substr(0,  umir));
+			umirQ                                 =                   currentChunk->dataToProcess->at(i).q2.substr(0,  umir);
+			reverse(umirQ.begin(),umirQ.end());
+
+			currentChunk->dataToProcess->at(i).s2 = currentChunk->dataToProcess->at(i).s2.substr(0,currentChunk->dataToProcess->at(i).s2.length()-umir);
+			currentChunk->dataToProcess->at(i).q2 = currentChunk->dataToProcess->at(i).q2.substr(0,currentChunk->dataToProcess->at(i).q2.length()-umir);
+			
+			if(umif != 0){
+			    cmt = cmt+"\tRX:Z:"+umifS+"-"+umirS;
+			    cmt = cmt+"\tQX:Z:"+umifQ+" "+umirQ;
+			}else{//no fwd UMI	
+			    cmt = cmt+"\tRX:Z:"+umirS;
+			    cmt = cmt+"\tQX:Z:"+umirQ;
+			}
+		    }
+
+		}
+
+	    }//end UMI
+	    
+	    //mtr->incrementCountall();
 	    toadd.code         = result.code;
 	    
 	    toadd.sequence     = result.sequence;
 	    toadd.quality      = result.quality;
+	    toadd.cmt          = cmt;
 
 	    toadd.d1           = currentChunk->dataToProcess->at(i).d1;
 	    toadd.s1           = currentChunk->dataToProcess->at(i).s1;
@@ -852,7 +1124,8 @@ void *mainComputationThreadFQ(void * argc){
 	    toadd.d2           = currentChunk->dataToProcess->at(i).d2;
 	    toadd.s2           = currentChunk->dataToProcess->at(i).s2;
 	    toadd.q2           = currentChunk->dataToProcess->at(i).q2;
-	    toadd.paired       =  true;
+
+	    toadd.paired       = true;
 
 	    // continue;
 
@@ -861,14 +1134,114 @@ void *mainComputationThreadFQ(void * argc){
 	}else{//V single mode below V
 		
 		
-	    merged result=mtr->process_SR(currentChunk->dataToProcess->at(i).s1,currentChunk->dataToProcess->at(i).q1); //*(fo1->getSeq()),*(fo1->getQual()));
+	    merged result=mtr->process_SR(currentChunk->dataToProcess->at(i).s1,
+					  currentChunk->dataToProcess->at(i).q1); //*(fo1->getSeq()),*(fo1->getQual()));
+
+
+	    if(umi){
+		cmt.clear();
+	        if( result.sequence != ""){//has new sequence
+
+		    if( result.sequence.length() < (umif+umir) ){//the resulting read is too short
+			if( result.code == ' '){
+			    result.code = 'U';
+			}
+
+			if(umif != 0 && umir != 0){
+			    cmt = cmt+"\tRX:Z:"+string(umif, 'N')+"-"+string(umir, 'N');
+			    cmt = cmt+"\tQX:Z:"+string(umif, '!')+" "+string(umir, '!');
+			}
+
+			if(umif != 0 && umir == 0){
+			    cmt = cmt+"\tRX:Z:"+string(umif, 'N');
+			    cmt = cmt+"\tQX:Z:"+string(umif, '!');
+			}
+
+			if(umif == 0 && umir != 0){
+			    cmt = cmt+"\tRX:Z:"+string(umir, 'N');
+			    cmt = cmt+"\tQX:Z:"+string(umir, '!');
+			}
+			
+		    }else{//resulting read is at least the size of both UMIs
+
+			//if UMI forward
+			if(umif != 0){	    
+			    umifS           = result.sequence.substr(0,umif);
+			    umifQ           = result.quality.substr(0, umif);
+
+			    result.sequence = result.sequence.substr(umif);
+			    result.quality  = result.quality.substr( umif);
+			    
+			    if(umir == 0){//add them now
+				cmt = cmt+"\tRX:Z:"+umifS;
+				cmt = cmt+"\tQX:Z:"+umifQ;
+			    }			    
+			}
+			
+			//if UMI reverse
+			if(umir != 0){
+			    umirS           = result.sequence.substr(  result.sequence.length()-umir,  umir);
+			    umirQ           = result.quality.substr(   result.quality.length() -umir,  umir);
+			    
+			    result.sequence = result.sequence.substr(0,result.sequence.length()-umir);
+			    result.quality  = result.quality.substr(0, result.quality.length() -umir);
+			    
+			    if(umif != 0){
+				cmt = cmt+"\tRX:Z:"+umifS+"-"+umirS;
+				cmt = cmt+"\tQX:Z:"+umifQ+" "+umirQ;
+			    }else{//no fwd UMI				
+				cmt = cmt+"\tRX:Z:"+umirS;
+				cmt = cmt+"\tQX:Z:"+umirQ;
+			    }
+			}
+		    }
+
+		}else{
+		    //kept as single-end read
+		    
+		    if(umif != 0){
+			//cut
+			umifS                                 = currentChunk->dataToProcess->at(i).s1.substr(0,  umif);
+			umifQ                                 = currentChunk->dataToProcess->at(i).q1.substr(0,  umif);
+			
+			currentChunk->dataToProcess->at(i).s1 = currentChunk->dataToProcess->at(i).s1.substr(umif);
+			currentChunk->dataToProcess->at(i).q1 = currentChunk->dataToProcess->at(i).q1.substr(umif);	 	
+
+			if(umir == 0){//add them now
+			    cmt = cmt+"\tRX:Z:"+umifS;
+			    cmt = cmt+"\tQX:Z:"+umifQ;
+			}	
+		    }
+		    
+
+		    if(umir != 0){//we cannot infer the UMI for the rev
+			umirS                                 = string(umir, 'N');
+			umirQ                                 = string(umir, '!');
+						
+			if(umif != 0){
+			    cmt = cmt+"\tRX:Z:"+umifS+"-"+umirS;
+			    cmt = cmt+"\tQX:Z:"+umifQ+" "+umirQ;
+			}else{//no fwd UMI	
+			    cmt = cmt+"\tRX:Z:"+umirS;
+			    cmt = cmt+"\tQX:Z:"+umirQ;
+			}
+		    }
+
+		}
+
+	    }//end UMI
+
+	   
+
 	    mtr->incrementCountall();
 	    toadd.code = result.code;
 	    toadd.paired  =  false;
+
+
 	    
 	    toadd.sequence     = result.sequence;
 	    toadd.quality      = result.quality;
-
+	    toadd.cmt          = cmt;
 	    toadd.d1           = currentChunk->dataToProcess->at(i).d1;
 	    toadd.s1           = currentChunk->dataToProcess->at(i).s1;
 	    toadd.q1           = currentChunk->dataToProcess->at(i).q1;
@@ -1075,7 +1448,7 @@ bool checkForWritingLoop(BamWriter * writer,int * lastWrittenChunk){
 
 
 
-bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,MergeTrimReads *     mtr){
+bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,MergeTrimReads *     mtr,    unsigned int umif,    unsigned int umir){
 
 
     //check something to write
@@ -1104,7 +1477,7 @@ bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,Merge
 
 	    //writing dataToWrite
 	    for(unsigned int i=0;i<dataToWrite->dataToProcess->size();i++){
-		if(dataToWrite->dataToProcess->at(i).paired){
+		if(dataToWrite->dataToProcess->at(i).paired){//PAIRED-END
 
 		    mtr->incrementCountall();
 		    
@@ -1116,21 +1489,25 @@ bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,Merge
 			    if(dataToWrite->dataToProcess->at(i).code == 'D'){
 				mtr->incrementCountchimera();
 			    }else{
-				cerr << "leehom: Wrong return code =\""<<dataToWrite->dataToProcess->at(i).code<<"\""<<endl;
-				exit(1);
+				if(dataToWrite->dataToProcess->at(i).code == 'U'){//UMI problem, fragment is too short, do not increment anything
+				    mtr->incrementCountUMIp();
+				}else{
+				    cerr << "leehom: Wrong return code =\""<<dataToWrite->dataToProcess->at(i).code<<"\""<<endl;
+				    exit(1);
+				}
 			    }
 			}
 			
-			onereadgroup->pairr2f<<""<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
-			onereadgroup->pairr1f<<""<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
+			onereadgroup->pairr2f<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
+			onereadgroup->pairr1f<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
 
 			continue;
 		    
 		    }else{
 		        if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence			    
-			    onereadgroup->single<<""<<dataToWrite->dataToProcess->at(i).d1<<"" <<endl << dataToWrite->dataToProcess->at(i).sequence<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).quality<<endl;    	    
+			    onereadgroup->single<<"@"<<dataToWrite->dataToProcess->at(i).d1<<" " <<dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).sequence<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).quality<<endl;    	    
 			    
-			    if( dataToWrite->dataToProcess->at(i).sequence.length() > max(dataToWrite->dataToProcess->at(i).s1.length(),dataToWrite->dataToProcess->at(i).s2.length()) ){
+			    if( (dataToWrite->dataToProcess->at(i).sequence.length()+umif+umir) > max(dataToWrite->dataToProcess->at(i).s1.length(),dataToWrite->dataToProcess->at(i).s2.length()) ){
 				mtr->incrementCountmergedoverlap();
 			    }else{
 				mtr->incrementCountmerged();			  
@@ -1139,13 +1516,13 @@ bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,Merge
 			}else{ //keep as is
 			    mtr->incrementCountnothing();
 			    
-			    onereadgroup->pairr2<<""<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
-			    onereadgroup->pairr1<<""<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
+			    onereadgroup->pairr2<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<dataToWrite->dataToProcess->at(i).cmt<<  endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
+			    onereadgroup->pairr1<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<dataToWrite->dataToProcess->at(i).cmt<<  endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
 			    
 			}
 		    }
 		    
-		}else{
+		}else{//SINGLE-END
 
 		    
 		    if(dataToWrite->dataToProcess->at(i).code != ' '){ //either chimera or missing key
@@ -1156,21 +1533,25 @@ bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,Merge
 			    if(dataToWrite->dataToProcess->at(i).code == 'D'){
 				mtr->incrementCountchimera();
 			    }else{
-				cerr << "leehom: Wrong return code =\""<<dataToWrite->dataToProcess->at(i).code<<"\""<<endl;
-				exit(1);
+				if(dataToWrite->dataToProcess->at(i).code == 'U'){//UMI problem
+				    mtr->incrementCountUMIp();
+				}else{
+				    cerr << "leehom: Wrong return code =\""<<dataToWrite->dataToProcess->at(i).code<<"\""<<endl;
+				    exit(1);
+				}
 			    }
 			}
 			
-			onereadgroup->singlef<<""<<dataToWrite->dataToProcess->at(i).d1<<"" <<endl << dataToWrite->dataToProcess->at(i).s1 <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1 <<endl;
+			onereadgroup->singlef<<"@"<<dataToWrite->dataToProcess->at(i).d1<<" " <<dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).s1 <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1 <<endl;
 			continue;
 		    }
 		    
 		    if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence
 			mtr->incrementCounttrimmed();
-			onereadgroup->single<<""<<dataToWrite->dataToProcess->at(i).d1<<"" <<endl << dataToWrite->dataToProcess->at(i).sequence <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).quality<<endl;
+			onereadgroup->single<<"@"<<dataToWrite->dataToProcess->at(i).d1<<" "<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).sequence <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).quality<<endl;
 		    }else{
 			mtr->incrementCountnothing();
-			onereadgroup->single<<""<<dataToWrite->dataToProcess->at(i).d1<<"" <<endl << dataToWrite->dataToProcess->at(i).s1       <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1     <<endl;
+			onereadgroup->single<<"@"<<dataToWrite->dataToProcess->at(i).d1<<" "<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1       <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1     <<endl;
 		    }
 		}
 			
@@ -1272,6 +1653,9 @@ int main (int argc, char *argv[]) {
     bool singleEndModeFQ=true;
     int    qualOffset     = 33;
 
+    unsigned int umif=0;
+    unsigned int umir=0;
+    
     //int    numberOfThreads   = 1;
 
     const string usage=string(string(argv[0])+
@@ -1314,6 +1698,10 @@ int main (int argc, char *argv[]) {
 			      "\t\t"+"--trimkey"     +"\t\t\t\t"+"Trim the key sequence even for untrimmed. (default '"+boolStringify(trimKey)+"')"+"\n"+
 
 			      "\t\t"+"-i , --allowMissing"+"\t\t\t"+"Allow one base in one key to be missing or wrong. (default "+boolStringify(allowMissing)+")"+"\n"+
+
+			      "\t\t"+"--umif [bp]"+"\t\t\t"+"Extract bp for the UMI for the forward read. (default "+stringify(umif)+")"+"\n"+
+			      "\t\t"+"--umir [bp]"+"\t\t\t"+"Extract bp for the UMI for the reverse read. (default "+stringify(umir)+")"+"\n"+
+
 			      "\t\t"+"--trimCutoff"+"\t\t\t"+"Lowest number of adapter bases to be observed for single Read trimming (default "+stringify(trimCutoff)+")");
 
     if( (argc== 1) ||
@@ -1474,6 +1862,20 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+
+	if(strcmp(argv[i],"--umif") == 0 ){
+	    umif = destringify<unsigned int>(argv[i+1]);
+	    i++;
+	    continue;
+	}
+
+	if(strcmp(argv[i],"--umir") == 0 ){
+	    umir = destringify<unsigned int>(argv[i+1]);
+	    i++;
+	    continue;
+	}
+
+	
 	if(strcmp(argv[i],"--trimCutoff") == 0 ){
 	    trimCutoff=atoi(argv[i+1]);
 	    i++;
@@ -1538,9 +1940,15 @@ int main (int argc, char *argv[]) {
 	int                   rc=0;
 
 
-
+	 
+	struct argspthread *argstopass = (struct argspthread *)malloc(sizeof(struct argspthread));
+	argstopass->singleEndModeFQ = singleEndModeFQ;
+	argstopass->umif            = umif;
+	argstopass->umir            = umir;
+	    
 	for(int i=0;i<numberOfThreads;i++){
-	    rc = pthread_create(&thread[i], NULL, mainComputationThreadFQ, &singleEndModeFQ);
+	    //rc = pthread_create(&thread[i], NULL, mainComputationThreadFQ, &singleEndModeFQ);
+	    rc = pthread_create(&thread[i], NULL, mainComputationThreadFQ, (void *)argstopass );
 	    checkResults("pthread_create()\n", rc);
 	}
 
@@ -1631,8 +2039,6 @@ int main (int argc, char *argv[]) {
 		def2s=def2[0];
 
 
-
-
 		if(strEndsWith(def1s,"/1")){
 		    def1s=def1s.substr(0,def1s.size()-2);
 		}
@@ -1656,22 +2062,19 @@ int main (int argc, char *argv[]) {
 		//PAIRED COMPUTATION
 		fqtoadd.paired = true;
 
-		fqtoadd.d1     = *(fo1->getID()  );
+		fqtoadd.d1     = def1s;//*(fo1->getID()  );
 		fqtoadd.s1     = *(fo1->getSeq() );
 		fqtoadd.q1     = *(fo1->getQual());
 
-		fqtoadd.d2     = *(fo2->getID()  );
+		fqtoadd.d2     = def2s;//*(fo2->getID()  );
 		fqtoadd.s2     = *(fo2->getSeq() );
 		fqtoadd.q2     = *(fo2->getQual());
 		
-
-
-	    }else{
-		
+	    }else{		
 		//SINGLE COMPUTATION
 		fqtoadd.paired = false;
 
-		fqtoadd.d1     = *(fo1->getID());
+		fqtoadd.d1     = def1s;//*(fo1->getID());
 		fqtoadd.s1     = *(fo1->getSeq());
 		fqtoadd.q1     = *(fo1->getQual());
 
@@ -1690,12 +2093,15 @@ int main (int argc, char *argv[]) {
 		while(true){
 		    //mutex queue is taken here
 		    if(int(queueDataToprocessFQ.size())>(maxQueueDataToprocessSize)){	  // if queue full
+#ifdef DEBUGSLEEPING
 			int queueSize = int(queueDataToprocessFQ.size());
+#endif
+			
 			//release mutex queue
 			rc = pthread_mutex_unlock(&mutexQueue);
 			checkResults("pthread_mutex_unlock()\n", rc);
 
-			bool hasWritten = checkForWritingLoopFQ(&onereadgroup,&lastWrittenChunk,mtr);
+			bool hasWritten = checkForWritingLoopFQ(&onereadgroup,&lastWrittenChunk,mtr,umif,umir);
 			if(!hasWritten){
 #ifdef DEBUGSLEEPING
 			    rc = pthread_mutex_lock(&mutexCERR);
@@ -1736,7 +2142,7 @@ int main (int argc, char *argv[]) {
 
 		rank++;
 
-		checkForWritingLoopFQ(&onereadgroup,&lastWrittenChunk,mtr);
+		checkForWritingLoopFQ(&onereadgroup,&lastWrittenChunk,mtr,umif,umir);
 	 
 		currentChunkfq = new DataChunkFQ(rank);	    
 		//currentChunk->rank=rank;
@@ -1823,21 +2229,25 @@ int main (int argc, char *argv[]) {
 				    if(dataToWrite->dataToProcess->at(i).code == 'D'){
 					mtr->incrementCountchimera();
 				    }else{
-					cerr << "leehom: Wrong return code =\""<<dataToWrite->dataToProcess->at(i).code<<"\""<<endl;
-					exit(1);
+					if(dataToWrite->dataToProcess->at(i).code == 'U'){//UMI problem, sequence is too short
+					    mtr->incrementCountUMIp();
+					}else{					    
+					    cerr << "leehom: Wrong return code =\""<<dataToWrite->dataToProcess->at(i).code<<"\""<<endl;
+					    exit(1);
+					}
 				    }
 				}
 				
-				onereadgroup.pairr2f<<""<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
-				onereadgroup.pairr1f<<""<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
+				onereadgroup.pairr2f<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
+				onereadgroup.pairr1f<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
 
 				continue;
 		    
 			    }else{
 				if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence			    
-				    onereadgroup.single<<""<<dataToWrite->dataToProcess->at(i).d1<<"" <<endl << dataToWrite->dataToProcess->at(i).sequence<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).quality<<endl;    	    
+				    onereadgroup.single<<"@"<<dataToWrite->dataToProcess->at(i).d1 << dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).sequence<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).quality<<endl;    	    
 			    
-				    if( dataToWrite->dataToProcess->at(i).sequence.length() > max(dataToWrite->dataToProcess->at(i).s1.length(),dataToWrite->dataToProcess->at(i).s2.length()) ){
+				    if( (dataToWrite->dataToProcess->at(i).sequence.length()+umif+umir) > max(dataToWrite->dataToProcess->at(i).s1.length(),dataToWrite->dataToProcess->at(i).s2.length()) ){
 					mtr->incrementCountmergedoverlap();
 				    }else{
 					mtr->incrementCountmerged();			  
@@ -1846,11 +2256,11 @@ int main (int argc, char *argv[]) {
 				}else{ //keep as is
 				    mtr->incrementCountnothing();
 				    if(trimKey){
-					onereadgroup.pairr2<<""<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<endl <<dataToWrite->dataToProcess->at(i).s2.substr( key2.length() )<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2.substr( key2.length() )<<endl;
-					onereadgroup.pairr1<<""<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<endl <<dataToWrite->dataToProcess->at(i).s1.substr( key1.length() )<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1.substr( key1.length() )<<endl;
+					onereadgroup.pairr2<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s2.substr( key2.length() )<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2.substr( key2.length() )<<endl;
+					onereadgroup.pairr1<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s1.substr( key1.length() )<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1.substr( key1.length() )<<endl;
 				    }else{
-					onereadgroup.pairr2<<""<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<endl <<dataToWrite->dataToProcess->at(i).s2                        <<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2                        <<endl;
-					onereadgroup.pairr1<<""<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<endl <<dataToWrite->dataToProcess->at(i).s1                        <<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1                        <<endl;
+					onereadgroup.pairr2<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s2                        <<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2                        <<endl;
+					onereadgroup.pairr1<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s1                        <<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1                        <<endl;
 				    }
 			    
 				}
@@ -1867,31 +2277,33 @@ int main (int argc, char *argv[]) {
 				    if(dataToWrite->dataToProcess->at(i).code == 'D'){
 					mtr->incrementCountchimera();
 				    }else{
-					cerr << "leehom: Wrong return code =\""<<dataToWrite->dataToProcess->at(i).code<<"\""<<endl;
-					exit(1);
+					if(dataToWrite->dataToProcess->at(i).code == 'U'){//UMI problem, sequence is too short
+					    mtr->incrementCountUMIp();
+					}else{					    					    
+					    cerr << "leehom: Wrong return code =\""<<dataToWrite->dataToProcess->at(i).code<<"\""<<endl;
+					    exit(1);
+					}
 				    }
 				}
 			
-				onereadgroup.singlef<<""<<dataToWrite->dataToProcess->at(i).d1<<"" <<endl << dataToWrite->dataToProcess->at(i).s1 <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1 <<endl;
+				onereadgroup.singlef<<"@"<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1 <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1 <<endl;
 				continue;
 			    }
 		    
 			    if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence
 				mtr->incrementCounttrimmed();
-				onereadgroup.single<<""<<dataToWrite->dataToProcess->at(i).d1<<"" <<endl << dataToWrite->dataToProcess->at(i).sequence <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).quality<<endl;
+				onereadgroup.single<<"@"<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).sequence <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).quality<<endl;
 			    }else{
 				mtr->incrementCountnothing();
 				if(trimKey){
-				    onereadgroup.single<<""<<dataToWrite->dataToProcess->at(i).d1<<"" <<endl << dataToWrite->dataToProcess->at(i).s1.substr( key1.length() )<<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1.substr( key1.length() )<<endl;
+				    onereadgroup.single<<"@"<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1.substr( key1.length() )<<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1.substr( key1.length() )<<endl;
 				}else{
-				    onereadgroup.single<<""<<dataToWrite->dataToProcess->at(i).d1<<"" <<endl << dataToWrite->dataToProcess->at(i).s1                        <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1                        <<endl;
+				    onereadgroup.single<<"@"<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1                        <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1                        <<endl;
 				}
 			    }
 			}
 			
 		    }
-
-
 		
 		    wroteData=true;		
 		    lastWrittenChunk=dataToWrite->rank;
@@ -1990,9 +2402,14 @@ int main (int argc, char *argv[]) {
 	int                   rc=0;
 
 
+	struct argspthread *argstopass = (struct argspthread *)malloc(sizeof(struct argspthread));
+	argstopass->keepOrig        = keepOrig;
+	argstopass->umif            = umif;
+	argstopass->umir            = umir;
 
 	for(int i=0;i<numberOfThreads;i++){
-	    rc = pthread_create(&thread[i], NULL, mainComputationThread, &keepOrig);
+	    //	    rc = pthread_create(&thread[i], NULL, mainComputationThread, &keepOrig);
+	    rc = pthread_create(&thread[i], NULL, mainComputationThread, (void *)argstopass);
 	    checkResults("pthread_create()\n", rc);
 	}
 
@@ -2075,8 +2492,9 @@ int main (int argc, char *argv[]) {
 		while(true){
 		    //mutex queue is taken here
 		    if(int(queueDataToprocess.size())>(maxQueueDataToprocessSize)){	  // if queue full
+#ifdef DEBUGSLEEPING
 			int queueSize = int(queueDataToprocess.size());
-
+#endif
 			//release mutex queue
 			rc = pthread_mutex_unlock(&mutexQueue);
 			checkResults("pthread_mutex_unlock()\n", rc);

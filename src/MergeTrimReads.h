@@ -125,7 +125,6 @@ class MergeTrimReads{
     //FUNCTIONS
     string returnFirstToken(string * toparse,string delim);
     char revComp(char c);
-    string revcompl(const string seq);
     inline string convert_logprob_quality(vector<int> logScores);
     inline double randomGen();
     inline baseQual cons_base_prob(baseQual  base1,baseQual base2);
@@ -242,6 +241,8 @@ class MergeTrimReads{
     int count_trimmed ;
     int count_nothing ;
     int count_chimera ;
+    int count_UMIp ;//UMI problems
+
     vector<string> checkedTags;
 
     //lnnorm
@@ -271,6 +272,7 @@ class MergeTrimReads{
     string reportSingleLine();
     string reportMultipleLines();
 
+    string revcompl(const string seq);
 
 
     int getCountall();
@@ -280,6 +282,7 @@ class MergeTrimReads{
     int getCounttrimmed();
     int getCountnothing();
     int getCountchimera();
+    int getCountUMIp();
 
 
     void incrementCountall();
@@ -289,6 +292,7 @@ class MergeTrimReads{
     void incrementCounttrimmed();
     void incrementCountnothing();
     void incrementCountchimera();
+    void incrementCountUMIp();
 
 };
 #endif

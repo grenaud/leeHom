@@ -426,8 +426,6 @@ int main (int argc, char *argv[]) {
     		def2s=def2[0];
 
 
-
-
     		if(strEndsWith(def1s,"/1")){
     		    def1s=def1s.substr(0,def1s.size()-2);
     		}
