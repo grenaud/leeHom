@@ -50,6 +50,8 @@ struct argspthread {
     bool  singleEndModeFQ;
     unsigned int umif;
     unsigned int umir;
+    unsigned int umtf;
+    unsigned int umtr;
 };
 
 // https://samtools.github.io/hts-specs/SAMtags.pdf
@@ -453,7 +455,10 @@ void *mainComputationThread(void * argc){
     bool keepOrig = ((struct argspthread*)argc)->keepOrig;
     unsigned int umif      = ((struct argspthread*)argc)->umif;
     unsigned int umir      = ((struct argspthread*)argc)->umir;
+    unsigned int umtf      = ((struct argspthread*)argc)->umtf;
+    unsigned int umtr      = ((struct argspthread*)argc)->umtr;
     bool umi      = ((umif+umir)>0);
+
     
     int   rc;
     int rankThread=0;
@@ -604,13 +609,13 @@ void *mainComputationThread(void * argc){
 
 		    if( umi ){
 
-			if( al.QueryBases.length() > (umif+umir)){
+			if( al.QueryBases.length() > (umif+umir+umtf+umtr)){
 			    if(umif != 0){	    
 				umifS         = al.QueryBases.substr(0,umif);
 				umifQ         = al.Qualities.substr( 0,umif);
 
-				al.QueryBases = al.QueryBases.substr(umif);
-				al.Qualities  = al.Qualities.substr( umif);
+				al.QueryBases = al.QueryBases.substr(umif+umtf);
+				al.Qualities  = al.Qualities.substr( umif+umtf);
 
 				if(umir == 0){	//no reverse UMI, add the tags now
 				    if(!al.AddTag("RX","Z",umifS)){ cerr << "Error while editing RX tags for UMI:"<<umifS<<"#"<< endl; exit(1);   }				    
@@ -623,8 +628,8 @@ void *mainComputationThread(void * argc){
 				umirS         = al.QueryBases.substr(al.QueryBases.length()-umir,  umir);
 				umirQ         = al.Qualities.substr( al.Qualities.length() -umir,  umir);
 			    
-				al.QueryBases = al.QueryBases.substr(0,al.QueryBases.length()-umir);
-				al.Qualities  = al.Qualities.substr(0, al.Qualities.length() -umir);
+				al.QueryBases = al.QueryBases.substr(0,al.QueryBases.length()-umir-umtr);
+				al.Qualities  = al.Qualities.substr(0, al.Qualities.length() -umir-umtr);
 
 				if(umif == 0){	//no forward UMI, just add the reverse
 				    				    
@@ -660,15 +665,17 @@ void *mainComputationThread(void * argc){
 		    //the second record is empty
 		}else{
 		    //keep the sequences as pairs
-
 		    
+		    if( al.QueryBases.length()  > (umif+umtf)){ cerr << "Error fwd read length is inferior to the sum of the UMIs"<< endl; exit(1); }
+		    if( al2.QueryBases.length() > (umir+umtr)){ cerr << "Error rev read length is inferior to the sum of the UMIs"<< endl; exit(1); }
+
 		    if(umif != 0){	    
 			//al2 is the fwd read
 			umifS          = al2.QueryBases.substr(0,umif);
 			umifQ          = al2.Qualities.substr( 0,umif);
 			
-			al2.QueryBases = al2.QueryBases.substr(umif);
-			al2.Qualities  = al2.Qualities.substr( umif);
+			al2.QueryBases = al2.QueryBases.substr(umif+umtf);
+			al2.Qualities  = al2.Qualities.substr( umif+umtf);
 			
 			if(umir == 0){	//no reverse UMI, add the tags now
 			    if(!al.AddTag("RX","Z",umifS)){  cerr << "Error while editing RX tags for UMI:"<<umifS<<"#"<< endl; exit(1);   }				    
@@ -684,8 +691,8 @@ void *mainComputationThread(void * argc){
 			umirQ          =                   al.Qualities.substr( 0,umir);
 			reverse(umirQ.begin(),umirQ.end());
 			
-			al.QueryBases  = al.QueryBases.substr(umir);
-			al.Qualities   = al.Qualities.substr( umir) ;
+			al.QueryBases  = al.QueryBases.substr(umir+umtr);
+			al.Qualities   = al.Qualities.substr( umir+umtr);
 
 			
 			if(umif == 0){	//no forward UMI, just add the reverse
@@ -734,14 +741,14 @@ void *mainComputationThread(void * argc){
 
 		
 		if(umif != 0){	    
-		    if(al.QueryBases.length() < (umif+umir) ){//the new fragment is shorter than both umis, cannot trim 
+		    if(al.QueryBases.length() < (umif+umir+umtf+umtr) ){//the new fragment is shorter than both umis, cannot trim 
 			al.SetIsDuplicate(true);  //leave but fail QC
 		    }else{				    
 			umifS         = al.QueryBases.substr(0,umif);
 			umifQ         = al.Qualities.substr(0, umif);
 
-			al.QueryBases = al.QueryBases.substr(umif);
-			al.Qualities  = al.Qualities.substr( umif);
+			al.QueryBases = al.QueryBases.substr(umif+umtf);
+			al.Qualities  = al.Qualities.substr( umif+umtf);
 
 			if(umir == 0){	//no reverse UMI, add the tags now
 			    if(!al.AddTag("RX","Z",umifS)){  cerr << "Error while editing RX tags for UMI:"<<umifS<<"#"<< endl; exit(1);   }				    
@@ -751,15 +758,15 @@ void *mainComputationThread(void * argc){
 		}
 
 		if(umir != 0){	    
-		    if(al.QueryBases.length() < (umif+umir) ){//the new fragment is shorter than both umis, cannot trim 
+		    if(al.QueryBases.length() < (umif+umir+umtf+umtr) ){//the new fragment is shorter than both umis, cannot trim 
 			al.SetIsDuplicate(true);  //leave but fail QC
 		    }else{				    
 			if(orgL  != newL){//was trimmed
 			    umirS         = al.QueryBases.substr(al.QueryBases.length()-umir,  umir);
 			    umirQ         = al.Qualities.substr( al.Qualities.length() -umir,  umir);
 			
-			    al.QueryBases = al.QueryBases.substr(0,al.QueryBases.length()-umir);
-			    al.Qualities  = al.Qualities.substr( 0,al.Qualities.length() -umir);
+			    al.QueryBases = al.QueryBases.substr(0,al.QueryBases.length()-umir-umtr);
+			    al.Qualities  = al.Qualities.substr( 0,al.Qualities.length() -umir-umtr);
 			}else{//if wasn't trimmed we do not know the rev UMI, add Ns
 			    umirS         = string(umir, 'N');
 			    umirQ         = string(umir, '!');
@@ -897,7 +904,10 @@ void *mainComputationThreadFQ(void * argc){
     bool   singleEndModeFQ = ((struct argspthread*)argc)->singleEndModeFQ;
     unsigned int    umif   = ((struct argspthread*)argc)->umif;
     unsigned int    umir   = ((struct argspthread*)argc)->umir;
-    bool   umi             = ((umif+umir)>0);
+    unsigned int    umtf   = ((struct argspthread*)argc)->umtf;
+    unsigned int    umtr   = ((struct argspthread*)argc)->umtr;
+
+    bool   umi             = ((umif+umir+umtf+umtr)>0);
     
     int   rc;
     int rankThread=0;
@@ -1017,7 +1027,7 @@ void *mainComputationThreadFQ(void * argc){
 		cmt.clear();
 	        if( result.sequence != ""){//has new sequence
 
-		    if( result.sequence.length() < (umif+umir) ){//the resulting read is too short
+		    if( result.sequence.length() < (umif+umir+umtf+umtr) ){//the resulting read is too short
 			if( result.code == ' '){
 			    result.code = 'U';
 			}
@@ -1044,8 +1054,8 @@ void *mainComputationThreadFQ(void * argc){
 			    umifS           = result.sequence.substr(0,umif);
 			    umifQ           = result.quality.substr(0, umif);
 
-			    result.sequence = result.sequence.substr(umif);
-			    result.quality  = result.quality.substr( umif);
+			    result.sequence = result.sequence.substr(umif+umtf);
+			    result.quality  = result.quality.substr( umif+umtf);
 			    
 			    if(umir == 0){//add them now
 				cmt = cmt+"\tRX:Z:"+umifS;
@@ -1058,8 +1068,8 @@ void *mainComputationThreadFQ(void * argc){
 			    umirS           = result.sequence.substr(  result.sequence.length()-umir,  umir);
 			    umirQ           = result.quality.substr(   result.quality.length() -umir,  umir);
 			    
-			    result.sequence = result.sequence.substr(0,result.sequence.length()-umir);
-			    result.quality  = result.quality.substr(0, result.quality.length() -umir);
+			    result.sequence = result.sequence.substr(0,result.sequence.length()-umir-umtr);
+			    result.quality  = result.quality.substr(0, result.quality.length() -umir-umtr);
 			    
 			    if(umif != 0){
 				cmt = cmt+"\tRX:Z:"+umifS+"-"+umirS;
@@ -1079,8 +1089,8 @@ void *mainComputationThreadFQ(void * argc){
 			umifS                                 = currentChunk->dataToProcess->at(i).s1.substr(0,  umif);
 			umifQ                                 = currentChunk->dataToProcess->at(i).q1.substr(0,  umif);
 			
-			currentChunk->dataToProcess->at(i).s1 = currentChunk->dataToProcess->at(i).s1.substr(umif);
-			currentChunk->dataToProcess->at(i).q1 = currentChunk->dataToProcess->at(i).q1.substr(umif);	 	
+			currentChunk->dataToProcess->at(i).s1 = currentChunk->dataToProcess->at(i).s1.substr(umif+umtf);
+			currentChunk->dataToProcess->at(i).q1 = currentChunk->dataToProcess->at(i).q1.substr(umif+umtf);	 	
 
 			if(umir == 0){//add them now
 			    cmt = cmt+"\tRX:Z:"+umifS;
@@ -1094,8 +1104,8 @@ void *mainComputationThreadFQ(void * argc){
 			umirQ                                 =                   currentChunk->dataToProcess->at(i).q2.substr(0,  umir);
 			reverse(umirQ.begin(),umirQ.end());
 
-			currentChunk->dataToProcess->at(i).s2 = currentChunk->dataToProcess->at(i).s2.substr(0,currentChunk->dataToProcess->at(i).s2.length()-umir);
-			currentChunk->dataToProcess->at(i).q2 = currentChunk->dataToProcess->at(i).q2.substr(0,currentChunk->dataToProcess->at(i).q2.length()-umir);
+			currentChunk->dataToProcess->at(i).s2 = currentChunk->dataToProcess->at(i).s2.substr(0,currentChunk->dataToProcess->at(i).s2.length()-umir-umtr);
+			currentChunk->dataToProcess->at(i).q2 = currentChunk->dataToProcess->at(i).q2.substr(0,currentChunk->dataToProcess->at(i).q2.length()-umir-umtr);
 			
 			if(umif != 0){
 			    cmt = cmt+"\tRX:Z:"+umifS+"-"+umirS;
@@ -1142,7 +1152,7 @@ void *mainComputationThreadFQ(void * argc){
 		cmt.clear();
 	        if( result.sequence != ""){//has new sequence
 
-		    if( result.sequence.length() < (umif+umir) ){//the resulting read is too short
+		    if( result.sequence.length() < (umif+umir+umtf+umtr) ){//the resulting read is too short
 			if( result.code == ' '){
 			    result.code = 'U';
 			}
@@ -1169,8 +1179,8 @@ void *mainComputationThreadFQ(void * argc){
 			    umifS           = result.sequence.substr(0,umif);
 			    umifQ           = result.quality.substr(0, umif);
 
-			    result.sequence = result.sequence.substr(umif);
-			    result.quality  = result.quality.substr( umif);
+			    result.sequence = result.sequence.substr(umif+umtf);
+			    result.quality  = result.quality.substr( umif+umtf);
 			    
 			    if(umir == 0){//add them now
 				cmt = cmt+"\tRX:Z:"+umifS;
@@ -1183,8 +1193,8 @@ void *mainComputationThreadFQ(void * argc){
 			    umirS           = result.sequence.substr(  result.sequence.length()-umir,  umir);
 			    umirQ           = result.quality.substr(   result.quality.length() -umir,  umir);
 			    
-			    result.sequence = result.sequence.substr(0,result.sequence.length()-umir);
-			    result.quality  = result.quality.substr(0, result.quality.length() -umir);
+			    result.sequence = result.sequence.substr(0,result.sequence.length()-umir-umtr);
+			    result.quality  = result.quality.substr(0, result.quality.length() -umir-umtr);
 			    
 			    if(umif != 0){
 				cmt = cmt+"\tRX:Z:"+umifS+"-"+umirS;
@@ -1204,8 +1214,8 @@ void *mainComputationThreadFQ(void * argc){
 			umifS                                 = currentChunk->dataToProcess->at(i).s1.substr(0,  umif);
 			umifQ                                 = currentChunk->dataToProcess->at(i).q1.substr(0,  umif);
 			
-			currentChunk->dataToProcess->at(i).s1 = currentChunk->dataToProcess->at(i).s1.substr(umif);
-			currentChunk->dataToProcess->at(i).q1 = currentChunk->dataToProcess->at(i).q1.substr(umif);	 	
+			currentChunk->dataToProcess->at(i).s1 = currentChunk->dataToProcess->at(i).s1.substr(umif+umtf);
+			currentChunk->dataToProcess->at(i).q1 = currentChunk->dataToProcess->at(i).q1.substr(umif+umtf);	 	
 
 			if(umir == 0){//add them now
 			    cmt = cmt+"\tRX:Z:"+umifS;
@@ -1448,7 +1458,7 @@ bool checkForWritingLoop(BamWriter * writer,int * lastWrittenChunk){
 
 
 
-bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,MergeTrimReads *     mtr,    unsigned int umif,    unsigned int umir){
+bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,MergeTrimReads *     mtr,    unsigned int umif,    unsigned int umir  , unsigned int umtf,    unsigned int umtr){
 
 
     //check something to write
@@ -1507,7 +1517,7 @@ bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,Merge
 		        if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence			    
 			    onereadgroup->single<<"@"<<dataToWrite->dataToProcess->at(i).d1<<" " <<dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).sequence<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).quality<<endl;    	    
 			    
-			    if( (dataToWrite->dataToProcess->at(i).sequence.length()+umif+umir) > max(dataToWrite->dataToProcess->at(i).s1.length(),dataToWrite->dataToProcess->at(i).s2.length()) ){
+			    if( (dataToWrite->dataToProcess->at(i).sequence.length()+umif+umir+umtf+umtr) > max(dataToWrite->dataToProcess->at(i).s1.length(),dataToWrite->dataToProcess->at(i).s2.length()) ){
 				mtr->incrementCountmergedoverlap();
 			    }else{
 				mtr->incrementCountmerged();			  
@@ -1655,6 +1665,8 @@ int main (int argc, char *argv[]) {
 
     unsigned int umif=0;
     unsigned int umir=0;
+    unsigned int umiTf=0;//trim after
+    unsigned int umiTr=0;
     
     //int    numberOfThreads   = 1;
 
@@ -1701,6 +1713,9 @@ int main (int argc, char *argv[]) {
 
 			      "\t\t"+"--umif [bp]"+"\t\t\t"+"Extract bp for the UMI for the forward read. (default "+stringify(umif)+")"+"\n"+
 			      "\t\t"+"--umir [bp]"+"\t\t\t"+"Extract bp for the UMI for the reverse read. (default "+stringify(umir)+")"+"\n"+
+			      
+			      "\t\t"+"--umtf [bp]"+"\t\t\t"+"Remove overhangs of bp after the UMI for the forward read. (default "+stringify(umiTf)+")"+"\n"+
+			      "\t\t"+"--umtr [bp]"+"\t\t\t"+"Remove overhangs of bp after the UMI for the reverse read. (default "+stringify(umiTr)+")"+"\n"+
 
 			      "\t\t"+"--trimCutoff"+"\t\t\t"+"Lowest number of adapter bases to be observed for single Read trimming (default "+stringify(trimCutoff)+")");
 
@@ -1875,6 +1890,18 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(strcmp(argv[i],"--umtf") == 0 ){
+	    umiTf = destringify<unsigned int>(argv[i+1]);
+	    i++;
+	    continue;
+	}
+
+	if(strcmp(argv[i],"--umtr") == 0 ){
+	    umiTr = destringify<unsigned int>(argv[i+1]);
+	    i++;
+	    continue;
+	}
+
 	
 	if(strcmp(argv[i],"--trimCutoff") == 0 ){
 	    trimCutoff=atoi(argv[i+1]);
@@ -1922,6 +1949,17 @@ int main (int argc, char *argv[]) {
 	}
     }
 
+    if(umiTf>0 && umif==0){
+	cerr<<"Cannot specify --umtf without --umif"<<endl;
+	return 1;	    
+    }
+
+    if(umiTr>0 && umir==0){
+	cerr<<"Cannot specify --umtr without --umir"<<endl;
+	return 1;	    
+    }
+
+
     mtr = new MergeTrimReads(adapter_F,adapter_S,adapter_chimera,
 			     key1,key2,trimKey,
 			     trimCutoff,allowMissing,ancientDNA,location,scale,useDist,qualOffset);
@@ -1945,6 +1983,8 @@ int main (int argc, char *argv[]) {
 	argstopass->singleEndModeFQ = singleEndModeFQ;
 	argstopass->umif            = umif;
 	argstopass->umir            = umir;
+	argstopass->umtf            = umiTf;
+	argstopass->umtr            = umiTr;
 	    
 	for(int i=0;i<numberOfThreads;i++){
 	    //rc = pthread_create(&thread[i], NULL, mainComputationThreadFQ, &singleEndModeFQ);
@@ -2101,7 +2141,7 @@ int main (int argc, char *argv[]) {
 			rc = pthread_mutex_unlock(&mutexQueue);
 			checkResults("pthread_mutex_unlock()\n", rc);
 
-			bool hasWritten = checkForWritingLoopFQ(&onereadgroup,&lastWrittenChunk,mtr,umif,umir);
+			bool hasWritten = checkForWritingLoopFQ(&onereadgroup,&lastWrittenChunk,mtr,umif,umir,umiTf,umiTr);
 			if(!hasWritten){
 #ifdef DEBUGSLEEPING
 			    rc = pthread_mutex_lock(&mutexCERR);
@@ -2142,7 +2182,7 @@ int main (int argc, char *argv[]) {
 
 		rank++;
 
-		checkForWritingLoopFQ(&onereadgroup,&lastWrittenChunk,mtr,umif,umir);
+		checkForWritingLoopFQ(&onereadgroup,&lastWrittenChunk,mtr,umif,umir,umiTf,umiTr);
 	 
 		currentChunkfq = new DataChunkFQ(rank);	    
 		//currentChunk->rank=rank;
@@ -2247,7 +2287,7 @@ int main (int argc, char *argv[]) {
 				if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence			    
 				    onereadgroup.single<<"@"<<dataToWrite->dataToProcess->at(i).d1 << dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).sequence<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).quality<<endl;    	    
 			    
-				    if( (dataToWrite->dataToProcess->at(i).sequence.length()+umif+umir) > max(dataToWrite->dataToProcess->at(i).s1.length(),dataToWrite->dataToProcess->at(i).s2.length()) ){
+				    if( (dataToWrite->dataToProcess->at(i).sequence.length()+umif+umir+umiTf+umiTr) > max(dataToWrite->dataToProcess->at(i).s1.length(),dataToWrite->dataToProcess->at(i).s2.length()) ){
 					mtr->incrementCountmergedoverlap();
 				    }else{
 					mtr->incrementCountmerged();			  
@@ -2406,6 +2446,8 @@ int main (int argc, char *argv[]) {
 	argstopass->keepOrig        = keepOrig;
 	argstopass->umif            = umif;
 	argstopass->umir            = umir;
+	argstopass->umtf            = umiTf;
+	argstopass->umtr            = umiTr;
 
 	for(int i=0;i<numberOfThreads;i++){
 	    //	    rc = pthread_create(&thread[i], NULL, mainComputationThread, &keepOrig);
