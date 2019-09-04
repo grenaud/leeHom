@@ -666,8 +666,8 @@ void *mainComputationThread(void * argc){
 		}else{
 		    //keep the sequences as pairs
 		    
-		    if( al.QueryBases.length()  > (umif+umtf)){ cerr << "Error fwd read length is inferior to the sum of the UMIs"<< endl; exit(1); }
-		    if( al2.QueryBases.length() > (umir+umtr)){ cerr << "Error rev read length is inferior to the sum of the UMIs"<< endl; exit(1); }
+		    if( al.QueryBases.length()  < (umif+umtf)){ cerr << "Error fwd read length is inferior to the sum of the UMIs"<< endl; exit(1); }
+		    if( al2.QueryBases.length() < (umir+umtr)){ cerr << "Error rev read length is inferior to the sum of the UMIs"<< endl; exit(1); }
 
 		    if(umif != 0){	    
 			//al2 is the fwd read
