@@ -1962,13 +1962,14 @@ MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, 
      //     min_length =5;
      //     qualOffset =33;
 
-     count_all = 0;
-     count_fkey = 0;
-     count_merged = 0;
+     count_all            = 0;
+     count_fkey           = 0;
+     count_merged         = 0;
      count_merged_overlap = 0;
-     count_trimmed = 0;
-     count_nothing = 0;
-     count_chimera = 0;
+     count_trimmed        = 0;
+     count_nothing        = 0;
+     count_chimera        = 0;
+     count_UMIp           = 0;
 
      checkedTags.push_back("RG");
      checkedTags.push_back("XI");

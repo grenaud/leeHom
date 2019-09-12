@@ -171,11 +171,13 @@ int main (int argc, char *argv[]) {
 
     
 
-    for(int i=1;i<(argc-1);i++){ //all but the last arg
+    int lastarg=(argc-1);
+    for(int i=1;i<lastarg;i++){ //all but the last arg
 
     	if(strcmp(argv[i],"-fq1") == 0 ){
     	    fastqfile1=string(argv[i+1]);
     	    fastqFormat=true;
+	    lastarg=argc;
     	    i++;
     	    continue;
     	}
@@ -184,6 +186,7 @@ int main (int argc, char *argv[]) {
     	    fastqfile2=string(argv[i+1]);
     	    fastqFormat=true;
     	    singleEndModeFQ=false;
+	    lastarg=argc;
     	    i++;
     	    continue;
     	}
@@ -191,11 +194,10 @@ int main (int argc, char *argv[]) {
     	if(strcmp(argv[i],"-fqo") == 0 ){
     	    fastqoutfile=string(argv[i+1]);
     	    fastqFormat=true;
+	    lastarg=argc;
     	    i++;
     	    continue;
     	}
-
-
 
 
     	if(strcmp(argv[i],"--log") == 0 ){
