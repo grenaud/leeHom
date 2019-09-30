@@ -1730,8 +1730,8 @@ int main (int argc, char *argv[]) {
     }
 
     
-
-    for(int i=1;i<(argc-1);i++){ //all but the last arg
+    int lastarg=(argc-1);
+    for(int i=1;i<lastarg;i++){ //all but the last arg
 	//int    numberOfThreads   = 1;
 
 	if(strcmp(argv[i],"-t") == 0 ){
@@ -1757,6 +1757,7 @@ int main (int argc, char *argv[]) {
 	if(strcmp(argv[i],"-fq1") == 0 ){
 	    fastqfile1=string(argv[i+1]);
 	    fastqFormat=true;
+	    lastarg=argc;
 	    i++;
 	    continue;
 	}
@@ -1764,6 +1765,7 @@ int main (int argc, char *argv[]) {
 	if(strcmp(argv[i],"-fq2") == 0 ){
 	    fastqfile2=string(argv[i+1]);
 	    fastqFormat=true;
+	    lastarg=argc;
 	    singleEndModeFQ=false;
 	    i++;
 	    continue;
@@ -1772,6 +1774,7 @@ int main (int argc, char *argv[]) {
 	if(strcmp(argv[i],"-fqo") == 0 ){
 	    fastqoutfile=string(argv[i+1]);
 	    fastqFormat=true;
+	    lastarg=argc;
 	    i++;
 	    continue;
 	}
@@ -1922,6 +1925,18 @@ int main (int argc, char *argv[]) {
 #endif
 
     bamFile=argv[argc-1];
+
+    if(!fastqFormat){
+
+	if( (bamFile != "-") &&
+	    strBeginsWith(bamFile,"-")
+	    ){
+	    cerr<<"If running in bam input/output mode, the last argument should be the bam file."<<endl;
+	    return 1;	    
+	}
+
+	
+    }
 
     if( (location != -1.0 && scale == -1.0) ||
 	(location == -1.0 && scale != -1.0) ){

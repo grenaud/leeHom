@@ -234,14 +234,14 @@ class MergeTrimReads{
     const int32_t MERGEDFLAG        ;
     const int32_t TRIMMEDMERGEDFLAG ;
  
-    int count_all ;
-    int count_fkey ;
-    int count_merged ;
-    int count_merged_overlap ;
-    int count_trimmed ;
-    int count_nothing ;
-    int count_chimera ;
-    int count_UMIp ;//UMI problems
+    unsigned int count_all ;
+    unsigned int count_fkey ;
+    unsigned int count_merged ;
+    unsigned int count_merged_overlap ;
+    unsigned int count_trimmed ;
+    unsigned int count_nothing ;
+    unsigned int count_chimera ;
+    unsigned int count_UMIp ;//UMI problems
 
     vector<string> checkedTags;
 
