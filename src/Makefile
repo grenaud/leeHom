@@ -35,7 +35,7 @@ leeHomMulti: leeHomMulti.o  MergeTrimReads.o ../libgab/PutProgramInHeader.o  ../
 	git clone --recursive https://github.com/pezmaster31/bamtools.git ../bamtools/
 
 ../bamtools/build/src/api/libbamtools.a: ../bamtools/src/api/BamAlignment.h
-	cd ../bamtools/ && mkdir -p build/  && cd build/ && cmake .. && make && cd ../..
+	cd bamtools/ && git reset --hard d24d850de17134fe4e7984b26493c5c0a1844b35 && mkdir -p build/  && cd build/ && cmake .. && make && cd ../..
 
 clean:
 	rm -f leeHom leeHomMulti *.o
