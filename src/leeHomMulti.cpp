@@ -18,7 +18,50 @@
 #include "PutProgramInHeader.h"
 #include "FastQParser.h"
 
+
+
+#include <sys/types.h>
+
+#include <sys/stat.h>
+#include <fcntl.h>
 #include "utils.h"
+#include "PutProgramInHeaderHTS.h"
+
+extern "C" {
+    //#include "tabix.h"
+    //#include "bam.h"
+#include "htslib/sam.h"
+#include "htslib/bgzf.h"
+#include "bam.h"
+
+#include "samtools.h"
+#include "sam_opts.h"
+#include "bedidx.h"
+
+}
+
+
+#define bam_is_reverse(b)     (((b)->core.flag&BAM_FREVERSE)    != 0)
+#define bam_is_unmapped(b)    (((b)->core.flag&BAM_FUNMAP)      != 0)
+#define bam_is_paired(b)      (((b)->core.flag&BAM_FPAIRED)     != 0)
+#define bam_is_propaired(b)   (((b)->core.flag&BAM_FPROPER_PAIR) != 0)
+#define bam_is_read1(b)       (((b)->core.flag&BAM_FREAD1)      != 0)
+
+#define bam_is_qcfailed(b)    (((b)->core.flag&BAM_FQCFAIL)     != 0)
+#define bam_is_rmdup(b)       (((b)->core.flag&BAM_FDUP)        != 0)
+#define bam_is_sec(b)         (((b)->core.flag&BAM_FSECONDARY)        != 0)
+#define bam_is_supp(b)        (((b)->core.flag&BAM_FSUPPLEMENTARY)    != 0)
+
+#define bam_is_failed(b)      ( bam_is_qcfailed(b) || bam_is_rmdup(b) || bam_is_sec(b) || bam_is_supp(b) )
+
+#define bam_mqual(b)          ((b)->core.qual)
+#define bam_isize(b)          ((b)->core.isize)
+#define bam_lqseq(b)          ((b)->core.l_qseq)
+
+
+
+
+//#include "utils.h"
 
 //#define DEBUG 
 
