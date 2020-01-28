@@ -599,10 +599,15 @@ void *mainComputationThread(void * argc){
     //////////////////////////////////////////////////////////////
     DataChunk * chunkToWrite = new DataChunk(currentChunk->rank);
 
-    BamAlignment al;
-    BamAlignment al2;
-    BamAlignment orig;
-    BamAlignment orig2;
+    bam1_t    *al;
+    bam1_t    *al2;
+    bam1_t    *orig;
+    bam1_t    *orig2;
+
+    // BamAlignment al;
+    // BamAlignment al2;
+    // BamAlignment orig;
+    // BamAlignment orig2;
     bool al2Null=true;
     string umifS;
     string umirS;
@@ -2516,17 +2521,31 @@ int main (int argc, char *argv[]) {
 
 	// FastQParser * fqp1;
 	// fqp1 = new FastQParser (fastqfile);
-	BamReader reader;
-	BamWriter writer;
+	// BamReader reader;
+	// BamWriter writer;
+	samFile  *reader;
+	samFile  *writer;
+    
+	reader  = sam_open_format(bamFile.c_str(), "r", NULL);
 
-	if ( !reader.Open(bamFile) ) {
+	//if ( !reader.Open(bamFile) ) {
+	if(fpBAMin == NULL){
 	    cerr << "Could not open input BAM file" << bamFile<<endl;
 	    return 1;
 	}
 
+	bam_hdr_t *headerSam;
+	headerSam = sam_hdr_read(fpBAMin);    
+	if(headerSam == NULL){
+	    cerr<<"Could not read header for "<<bamFile<<endl;
+	    return 1;
+	}
 
-	SamHeader       header     = reader.GetHeader();
-	const RefVector references = reader.GetReferenceData();
+
+	string newHeader  (headerSam->text);
+
+	// SamHeader       header     = reader.GetHeader();
+	// const RefVector references = reader.GetReferenceData();
     
 	string pID          = "leeHom";   
 	string pName        = "leeHom";   
@@ -2534,18 +2553,36 @@ int main (int argc, char *argv[]) {
 	for(int i=0;i<(argc);i++){
 	    pCommandLine += (string(argv[i])+" ");
 	}
-	putProgramInHeader(&header,pID,pName,pCommandLine,returnGitHubVersion(string(argv[0]),".."));
+
+	
+	putProgramInHeaderHTS(&newheader,pID,pName,pCommandLine,returnGitHubVersion(string(argv[0]),".."));
 
 	//const RefVector references = reader.GetReferenceData();
 	//we will not call bgzip with full compression, good for piping into another program to 
 	//lessen the load on the CPU
-	if(produceUnCompressedBAM) 
-	    writer.SetCompressionMode(BamWriter::Uncompressed);
 
-	if ( !writer.Open(bamFileOUT,header,references) ) {
-	    cerr << "Could not open output BAM file "<<bamFileOUT << endl;
+	if(produceUnCompressedBAM){
+	    writer = sam_open_format(bamFileOUT.c_str(), "wb0", NULL);	    
+	    //writer.SetCompressionMode(BamWriter::Uncompressed);
+	}else{
+	    writer = sam_open_format(bamFileOUT.c_str(), "wb", NULL);
+	}
+	
+       	if(writer == NULL){
+	    cerr << "Could not open input BAM file"<< bamFileOUT << endl;
 	    return 1;
 	}
+
+	if(sam_hdr_write(writer, headerSam) < 0){
+	    cerr<<"Could not write header for "<<bamFileOUT<<endl;
+	    return 1;       
+	}
+
+
+	// if ( !writer.Open(bamFileOUT,header,references) ) {
+	//     cerr << "Could not open output BAM file "<<bamFileOUT << endl;
+	//     return 1;
+	// }
 
 	// if ( !writer.Open(bamfilew,header,references) ) {
 	// 	cerr << "Could not open output BAM file "<<bamfilew << endl;
@@ -2564,9 +2601,11 @@ int main (int argc, char *argv[]) {
 	int lastWrittenChunk=-1;
 	// currentChunk->rank=rank;
 
-	BamAlignment al;
+	bam1_t    *al;
+	//BamAlignment al;
+	while(sam_read1(reader, headerSam, al) >= 0){
 
-	while ( reader.GetNextAlignment(al) ) {
+	//while ( reader.GetNextAlignment(al) ) {
 	    
 	    //FastQObj * fo1=fqp1->getData();
 	    //cout<<counter<<"\t"<<currentChunk->dataToProcess->size()<<"\t"<<al.Name<<endl;
