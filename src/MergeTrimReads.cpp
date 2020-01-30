@@ -386,6 +386,27 @@ inline double MergeTrimReads::randomGen(){
     }
 }
 
+inline bool hasTag(const bam1_t    *al,const string & tag){
+    uint8_t *rgtag = bam_aux_get(al,tag.c_str());
+    if(rgtag){
+	delete(rgtag);
+	return true;
+    }else
+	return false;        
+}
+
+inline void addTagi(bam1_t    *al,const string & tag,const int val){
+    
+    bam_aux_append(al, tag.c_str(), 'i', 4, (uint8_t*)(&val));
+
+}
+
+inline void addTagZ(bam1_t    *al,const string & tag,const string & val){
+    
+    bam_aux_append(al, tag.c_str(), 'Z', (val.size()+1), (uint8_t*)(val.c_str()));
+
+}
+
 
 //! Computes the consensus for two individual bases with their quality scores
 /*!
@@ -1879,28 +1900,38 @@ inline string MergeTrimReads::sortUniqueChar(string v){
   This subroutine sets the MERGEDBAMFLAG bam flag in for the BamAlignment.
   If the flag is already present, it will remove it
 
-  \param al The BamAlignment object where the flags will be added
+  \param al The bam1_t    object where the flags will be added
   \param f an int for the type of flag to add
   \return true iff successful
 */
-bool MergeTrimReads::set_extra_flag( BamAlignment &al, int32_t f )
+bool MergeTrimReads::set_extra_flag(bam1_t    & al, int32_t f )
 {
     char tp=0;
-    if(!al.GetTagType(MERGEDBAMFLAG,tp)) {
-        if(al.AddTag(MERGEDBAMFLAG,"i",f)) return true;
-    }
-    else {
-        int v=0;
-        switch(tp) {
-            case 'i': case 'I': case 's': case 'S': case 'c': case 'C': 
-                al.GetTag(MERGEDBAMFLAG,v);
-                al.RemoveTag(MERGEDBAMFLAG);
-                if(al.AddTag(MERGEDBAMFLAG,"i",v|f)) return true;
-                break ;
-            default:
-                cerr << "ERROR: " << MERGEDBAMFLAG << " has type " << tp << endl;
-        }
-    }
+    uint8_t *rgtag = bam_aux_get(b,"RG");
+    if(!rgtag){
+	if(al.AddTag(MERGEDBAMFLAG,"i",f)) return true;
+    }else{
+
+	string rgtags ( (char *)rgtag );
+	cerr<<"rgtags "<<rgtags<<endl;
+	
+	}
+
+    // if(!al.GetTagType(MERGEDBAMFLAG,tp)) {
+    //     if(al.AddTag(MERGEDBAMFLAG,"i",f)) return true;
+    // }
+    // else {
+    //     int v=0;
+    //     switch(tp) {
+    //         case 'i': case 'I': case 's': case 'S': case 'c': case 'C': 
+    //             al.GetTag(MERGEDBAMFLAG,v);
+    //             al.RemoveTag(MERGEDBAMFLAG);
+    //             if(al.AddTag(MERGEDBAMFLAG,"i",v|f)) return true;
+    //             break ;
+    //         default:
+    //             cerr << "ERROR: " << MERGEDBAMFLAG << " has type " << tp << endl;
+    //     }
+    // }
     cerr << "Unable to add tag " << MERGEDBAMFLAG << endl;
     return false;
 }
@@ -2049,7 +2080,7 @@ MergeTrimReads::~MergeTrimReads (){
   \return True if the pair was merged and is contained within al only
 */
 //pair<BamAlignment,BamAlignment> MergeTrimReads::processPair(const BamAlignment & al,const BamAlignment & al2){
-bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
+bool MergeTrimReads::processPair( bam1_t  & al, bam1_t & al2){
     //cerr<<len_key1<<" "<<len_key2<<" "<<al.QueryBases<<" "<<al2.QueryBases<<endl;
 
     string read1;
@@ -2331,7 +2362,7 @@ bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
   \param al BamAlignment object as input and that will be written out
   \return The BamAlignment to be written
 */
-void MergeTrimReads::processSingle(BamAlignment & al){
+void MergeTrimReads::processSingle(bam1_t & al){
 
     string read1;
     string qual1;

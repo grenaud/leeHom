@@ -19,6 +19,13 @@
 #include <api/BamAux.h>
 /* #include <boost/math/distributions/lognormal.hpp> */
 
+
+extern "C" {
+    //#include "tabix.h"
+    //#include "bam.h"
+#include "htslib/sam.h"
+}
+
 #include "utils.h"
 
 using namespace std;
@@ -129,7 +136,10 @@ class MergeTrimReads{
     inline double randomGen();
     inline baseQual cons_base_prob(baseQual  base1,baseQual base2);
     inline baseQual cons_base_probInit(baseQual  base1,baseQual base2);
-
+    inline bool hasTag(const bam1_t    *al,const string & tag);
+    inline void addTagi(bam1_t    *al,const int tag);
+    inline void addTagZ(bam1_t    *al,const string & tag);
+   
 
 
     /* double computePDF(const double x); */
@@ -227,7 +237,7 @@ class MergeTrimReads{
 
 
     string sortUniqueChar(string v);
-    bool set_extra_flag( BamAlignment &al, int32_t f );
+    bool set_extra_flag( bam1_t &al, int32_t f );
 
     const string MERGEDBAMFLAG ;
     const int32_t TRIMMEDFLAG       ;
@@ -266,8 +276,8 @@ class MergeTrimReads{
 
     /* pair<BamAlignment,BamAlignment> processPair(const BamAlignment & al,const BamAlignment & al2); */
     /* BamAlignment                    processSingle(const BamAlignment & al); */
-    bool processPair(   BamAlignment & al , BamAlignment & al2);
-    void processSingle( BamAlignment & al );
+    bool processPair(   bam1_t & al , bam1_t & al2);
+    void processSingle( bam1_t & al );
 
     string reportSingleLine();
     string reportMultipleLines();

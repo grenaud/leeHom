@@ -146,12 +146,13 @@ inline bool isBamAlignEmpty(const BamAlignment & toTest){
 
 
 
+
 //BAM
 class DataChunk{
 private:
     
 public:
-    vector<BamAlignment>  * dataToProcess;    
+    vector<bam1_t>  * dataToProcess;    
     int rank;
 
     // DataChunk();
@@ -164,7 +165,7 @@ public:
 
 DataChunk::DataChunk(int rank_m){
     rank =  rank_m;
-    dataToProcess = new vector<BamAlignment>() ;    
+    dataToProcess = new vector<bam1_t>() ;    
 
 #ifdef DEBUGMEM
     int rc = pthread_mutex_lock(&mutexCERR);
@@ -628,18 +629,20 @@ void *mainComputationThread(void * argc){
 	//     }
 	// }
 	
-	al = currentChunk->dataToProcess->at(i);
+	al = &currentChunk->dataToProcess->at(i);
 	//cout<<rankThread<<" al  "<<al.Name<<" "<<al.IsFirstMate()<<endl;
 	//if(!al2Null)
 	//cout<<rankThread<<" al2 "<<al2.Name<<" "<<al2.IsFirstMate()<<endl;
 	
-	if(al.IsPaired() && 
+	//if(al.IsPaired() && 
+	if(bam_is_paired(al) && 
 	   al2Null ){
 	    al2=al;
 	    al2Null=false;
 	    continue;
 	}else{
-	    if(al.IsPaired() && 
+	    //if(al.IsPaired() && 
+	    if(bam_is_paired(al) && 
 	       !al2Null){
 				
 		if(keepOrig){
@@ -1413,8 +1416,9 @@ void *mainComputationThreadFQ(void * argc){
 }
 
 
-
-bool checkForWritingLoop(BamWriter * writer,int * lastWrittenChunk){
+	
+//bool checkForWritingLoop(BamWriter * writer,int * lastWrittenChunk){
+bool checkForWritingLoop(samFile  *writer,bam_hdr_t *headerSam,int * lastWrittenChunk){
 
 
     //check something to write
@@ -1444,7 +1448,8 @@ bool checkForWritingLoop(BamWriter * writer,int * lastWrittenChunk){
 	    //writing dataToWrite
 	    for(unsigned int i=0;i<dataToWrite->dataToProcess->size();i++){
 		//cout<<"loop: writing "<<dataToWrite->dataToProcess->at(i).Name<<endl;
-		writer->SaveAlignment( dataToWrite->dataToProcess->at(i) );
+		//writer->SaveAlignment( dataToWrite->dataToProcess->at(i) );
+		if (sam_write1(writer, headerSam, &dataToWrite->dataToProcess->at(i)) < 0) {    cerr<<"ERROR: Cannot write record"<<endl; exit(1);}
 		// outfile<< dataToWrite->dataToProcess->at(i).Name 
 		//        << endl  
 		//        << dataToWrite->dataToProcess->at(i).QueryBases << endl
@@ -2529,13 +2534,13 @@ int main (int argc, char *argv[]) {
 	reader  = sam_open_format(bamFile.c_str(), "r", NULL);
 
 	//if ( !reader.Open(bamFile) ) {
-	if(fpBAMin == NULL){
+	if(reader == NULL){
 	    cerr << "Could not open input BAM file" << bamFile<<endl;
 	    return 1;
 	}
 
 	bam_hdr_t *headerSam;
-	headerSam = sam_hdr_read(fpBAMin);    
+	headerSam = sam_hdr_read(reader);    
 	if(headerSam == NULL){
 	    cerr<<"Could not read header for "<<bamFile<<endl;
 	    return 1;
@@ -2553,10 +2558,16 @@ int main (int argc, char *argv[]) {
 	for(int i=0;i<(argc);i++){
 	    pCommandLine += (string(argv[i])+" ");
 	}
-
 	
-	putProgramInHeaderHTS(&newheader,pID,pName,pCommandLine,returnGitHubVersion(string(argv[0]),".."));
+	putProgramInHeaderHTS(&newHeader,pID,pName,pCommandLine,returnGitHubVersion(string(argv[0]),".."));
 
+	char  newHeader_c [newHeader.length()+1];
+	strcpy(newHeader_c, newHeader.c_str()); 
+
+	headerSam->text   = newHeader_c;
+	headerSam->l_text = newHeader.length();
+	//headerSam->text = //TODO
+	
 	//const RefVector references = reader.GetReferenceData();
 	//we will not call bgzip with full compression, good for piping into another program to 
 	//lessen the load on the CPU
@@ -2610,7 +2621,8 @@ int main (int argc, char *argv[]) {
 	    //FastQObj * fo1=fqp1->getData();
 	    //cout<<counter<<"\t"<<currentChunk->dataToProcess->size()<<"\t"<<al.Name<<endl;
 			    
-	    if(al.IsMapped() || al.HasTag("NM") || al.HasTag("MD")  ){
+	    //if(al.IsMapped() || al.HasTag("NM") || al.HasTag("MD")  ){
+	    if( (!bam_is_unmapped(al)) || hasTag(al,"NM") || hasTag(al,"MD") ){
 		if(!allowAligned){
 		    cerr << "Reads should not be aligned" << endl;
 		    return 1;
@@ -2622,7 +2634,7 @@ int main (int argc, char *argv[]) {
 	    if(counter== (sizeChunk-1)){
 		
 		//store old one
-		currentChunk->dataToProcess->push_back(al);
+		currentChunk->dataToProcess->push_back(*al);
 	    
 
 		rc = pthread_mutex_lock(&mutexQueue);
@@ -2639,7 +2651,7 @@ int main (int argc, char *argv[]) {
 			checkResults("pthread_mutex_unlock()\n", rc);
 
 
-			bool hasWritten = checkForWritingLoop(&writer,&lastWrittenChunk);
+			bool hasWritten = checkForWritingLoop(writer,headerSam,&lastWrittenChunk);
 			if(!hasWritten){
 #ifdef DEBUGSLEEPING
 			    rc = pthread_mutex_lock(&mutexCERR);
@@ -2675,14 +2687,14 @@ int main (int argc, char *argv[]) {
 
 		rank++;
 
-		checkForWritingLoop(&writer,&lastWrittenChunk);
+		checkForWritingLoop(writer,headerSam,&lastWrittenChunk);
 
 		//new one
 		currentChunk = new DataChunk(rank);	    
 		//currentChunk->rank=rank;
 		counter=0;
-	    }else{
-		currentChunk->dataToProcess->push_back(al);
+	    }else{//no closing a chunk, simply push back
+		currentChunk->dataToProcess->push_back(*al);
 
 		counter++;
 	    }
@@ -2692,8 +2704,15 @@ int main (int argc, char *argv[]) {
 	    // toadd.seqs = *(fo1->getSeq());
 	    // toadd.qual = *(fo1->getQual());
 	}//end bam file has data
-	reader.Close();
-		    			
+	//reader.Close();
+	
+	bam_destroy1(al);
+
+	if(sam_close(reader)<0){ cerr<<"Cannot close file: "<<bamFile<<endl; }
+
+
+
+	    			
 #ifdef DEBUG 
 	rc = pthread_mutex_lock(&mutexCERR);
 	checkResults("pthread_mutex_lock()\n", rc);
@@ -2744,7 +2763,9 @@ int main (int argc, char *argv[]) {
 		    //writing dataToWrite
 		    for(unsigned int i=0;i<dataToWrite->dataToProcess->size();i++){
 			//cout<<"final: writing "<<dataToWrite->dataToProcess->at(i).Name<<endl;
-			writer.SaveAlignment( dataToWrite->dataToProcess->at(i) );
+			//writer.SaveAlignment( dataToWrite->dataToProcess->at(i) );
+
+			if (sam_write1(writer, headerSam, &dataToWrite->dataToProcess->at(i)) < 0) {    cerr<<"ERROR: Cannot write record to "<<bamFileOUT<<endl; exit(1);}
 			// outfile<< dataToWrite->dataToProcess->at(i).Name
 			// 	   << endl  
 			// 	   << dataToWrite->dataToProcess->at(i).QueryBases << endl
@@ -2796,7 +2817,9 @@ int main (int argc, char *argv[]) {
 	pthread_mutex_destroy(&mutexQueue);
 	pthread_mutex_destroy(&mutexCounter);
 	pthread_mutex_destroy(&mutexCERR);
-	writer.Close();
+	//writer.Close();
+	if(sam_close(writer)<0){ cerr<<"Cannot close file: "<<bamFileOUT<<endl; }
+
 
 	cerr <<mtr->reportSingleLine()<<endl;
 

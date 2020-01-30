@@ -28,19 +28,19 @@ leeHomMulti: leeHomMulti.o  MergeTrimReads.o ../lib/libgab/PutProgramInHeader.o 
 
 ../lib/htslib/hts_internal.h:
 	rm -rfv ../lib/htslib/
-	git clone --recursive https://github.com/samtools/htslib.git ../lib/htslib/
+	git clone --depth 1 --recursive https://github.com/samtools/htslib.git ../lib/htslib/
 
 ../lib/samtools/bedidx.o:  ../lib/samtools/sam.h
 	cd ../lib/samtools/ && make && cd ../..
 
 ../lib/samtools/sam.h:
 	rm -rf ../lib/samtools/
-	git clone --recursive https://github.com/samtools/samtools.git ../lib/samtools/
+	git clone --depth 1 --recursive https://github.com/samtools/samtools.git ../lib/samtools/
 
 
 ../lib/libgab/utils.h:
 	rm -rf libgab/
-	git clone --recursive https://github.com/grenaud/libgab.git ../lib/libgab/
+	git clone --depth 1 --recursive https://github.com/grenaud/libgab.git ../lib/libgab/
 
 ../lib/libgab/utils.o: ../lib/bamtools/build/src/api/libbamtools.a  ../lib/libgab/utils.h
 	make -C ../lib/libgab
@@ -48,7 +48,7 @@ leeHomMulti: leeHomMulti.o  MergeTrimReads.o ../lib/libgab/PutProgramInHeader.o 
 ../lib/bamtools/src/api/BamAlignment.h:
 	rm -rf ../lib/bamtools/
 	mkdir ../lib/bamtools/
-	git clone --recursive https://github.com/pezmaster31/bamtools.git ../lib/bamtools/ && cd ../lib/bamtools/ && git reset --hard d24d850de17134fe4e7984b26493c5c0a1844b35
+	git clone --recursive --depth 1 https://github.com/pezmaster31/bamtools.git ../lib/bamtools/ && cd ../lib/bamtools/ && git reset --hard d24d850de17134fe4e7984b26493c5c0a1844b35
 
 ../lib/bamtools/build/src/api/libbamtools.a: ../lib/bamtools/src/api/BamAlignment.h
 	cd ../lib/bamtools/ &&  mkdir -p build/  && cd build/ && cmake .. && make && cd ../..
