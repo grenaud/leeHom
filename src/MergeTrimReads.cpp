@@ -386,7 +386,7 @@ inline double MergeTrimReads::randomGen(){
     }
 }
 
-inline bool hasTag(const bam1_t    *al,const string & tag){
+inline bool MergeTrimReads::hasTag(const bam1_t    *al,const string & tag){
     uint8_t *rgtag = bam_aux_get(al,tag.c_str());
     if(rgtag){
 	delete(rgtag);
@@ -395,16 +395,118 @@ inline bool hasTag(const bam1_t    *al,const string & tag){
 	return false;        
 }
 
-inline void addTagi(bam1_t    *al,const string & tag,const int val){
+inline void MergeTrimReads::getSeq(const bam1_t * al,string * strseq){
+    uint8_t * s = bam_get_seq(al);
+    //if (ks_resize(str, str->l+2+2*c->l_qseq) < 0) goto mem_err;
+    //char *cp = str->s + str->l;
+    strseq->resize(al->core.l_qseq);
+    int lq2 = (al->core.l_qseq / 2);
+    int i;
+    for(i=0;i<lq2;i++){
+	uint8_t b = s[i];
+	strseq->at(i*2+0) = "=ACMGRSVTWYHKDBN"[b>>4];
+	strseq->at(i*2+1) = "=ACMGRSVTWYHKDBN"[b&0xf];
+    }
+    
+    for(i*=2;i<(al->core.l_qseq); ++i){	
+	strseq->at(i) = "=ACMGRSVTWYHKDBN"[ bam_seqi(s, i) ];
+    }
+}
+
+inline void MergeTrimReads::getQual(const bam1_t * al,string * strqual){
+    uint8_t *  s = bam_get_qual(al);
+    int i = 0;
+    strqual->resize(al->core.l_qseq);
+    if (s[0] == 0xff) {
+	strqual->at(i++) = '*';
+    }else{
+	for (i = 0; i < al->core.l_qseq; ++i)
+	    strqual->at(i)=s[i]+33;
+    }
+    //cp[i] = 0;
+
+}
+
+inline void MergeTrimReads::addTagi(bam1_t    *al,const string & tag,const int32_t val){
     
     bam_aux_append(al, tag.c_str(), 'i', 4, (uint8_t*)(&val));
 
 }
 
-inline void addTagZ(bam1_t    *al,const string & tag,const string & val){
-    
-    bam_aux_append(al, tag.c_str(), 'Z', (val.size()+1), (uint8_t*)(val.c_str()));
+inline void MergeTrimReads::addTaga(bam1_t    *al,const string & tag,const char val){    
+    bam_aux_append(al, tag.c_str(), 'a', 1, (uint8_t*)(&val));
+}
 
+inline void MergeTrimReads::addTagZ(bam1_t    *al,const string & tag,const string & val){
+    bam_aux_append(al, tag.c_str(), 'Z', (val.size()+1), (uint8_t*)(val.c_str()));
+}
+
+inline string MergeTrimReads::getTagZ(bam1_t    *al,const string & tag){
+
+    uint8_t *rettag = bam_aux_get(al,tag.c_str());
+
+    if(rettag){
+	string tagToReturn ( (char *)rettag );
+	return tagToReturn;
+    }else{
+	cerr<<"Cannot get tag"<<tag<<" for read "<<bam_get_qname(al)<<endl;
+	exit(1);
+    }
+
+}
+
+
+inline void MergeTrimReads::editZQTag(bam1_t    *al,const char code){
+
+    uint8_t *rettag = bam_aux_get(al,"ZQ");
+
+    if(rettag){//has zq
+	string zqtag ( (char *)rettag );
+	int deltag = bam_aux_del(al, rettag); //bam_aux_get(b,"RG"));
+	
+	if(deltag){ 
+	    cerr<<"Cannot remove tag"<<endl; 
+	    exit(1); 	
+	}else{
+	    //fine
+	}
+	zqtag=sortUniqueChar(zqtag);
+	addTagZ(al,"ZQ",zqtag);
+	
+    }else{
+	addTaga(al,"ZQ",code);
+    }
+    
+    // if(hasTag(al,"ZQ")){
+    // 	//	removeTag
+    // 	//sortUniqueChar(prevZQ1))){
+    // 	string prevZQ = getTagZ(al,"ZQ");
+    // 	removeTag(al,"ZQ");
+	
+    // }else{
+    // 	addTaga(al,"ZQ",code);
+    // }
+    //bam_aux_append(al, tag.c_str(), 'Z', (val.size()+1), (uint8_t*)(val.c_str()));
+
+}
+
+inline void MergeTrimReads::removeTag(bam1_t  *al,const string & tag){
+
+    uint8_t *rettag = bam_aux_get(al,tag.c_str());
+
+    if(rettag!=NULL){
+	int deltag = bam_aux_del(al, rettag);//bam_aux_get(b,"RG"));
+
+	if(deltag){
+	    cerr<<"Cannot remove tag"<<endl;
+	    exit(1);
+	}else{
+	    //fine
+	}
+    }else{
+	//nothing to do
+    }
+    
 }
 
 
@@ -1907,15 +2009,22 @@ inline string MergeTrimReads::sortUniqueChar(string v){
 bool MergeTrimReads::set_extra_flag(bam1_t    & al, int32_t f )
 {
     char tp=0;
-    uint8_t *rgtag = bam_aux_get(b,"RG");
-    if(!rgtag){
-	if(al.AddTag(MERGEDBAMFLAG,"i",f)) return true;
+    uint8_t *rgtag = bam_aux_get(&al,MERGEDBAMFLAG.c_str());
+    if(!rgtag){//does not exist
+	//if(al.AddTag(MERGEDBAMFLAG,"i",f)) return true;
+	addTagi(&al,MERGEDBAMFLAG,f);
     }else{
-
-	string rgtags ( (char *)rgtag );
-	cerr<<"rgtags "<<rgtags<<endl;
 	
+	int deltag = bam_aux_del(&al, rgtag);//bam_aux_get(b,"RG"));
+
+	if(deltag){
+	    cerr<<"Cannot remove tag "<<MERGEDBAMFLAG<<endl;
+	    exit(1);
+	}else{
+	    addTagi(&al,MERGEDBAMFLAG,f);
 	}
+	
+    }
 
     // if(!al.GetTagType(MERGEDBAMFLAG,tp)) {
     //     if(al.AddTag(MERGEDBAMFLAG,"i",f)) return true;
@@ -2088,24 +2197,43 @@ bool MergeTrimReads::processPair( bam1_t  & al, bam1_t & al2){
     string qual1;
     string qual2;
 
-    if(al.Name != al2.Name ){
+    //if(al.Name != al2.Name ){
+    if(bam_get_qname(&al) != bam_get_qname(&al2) ){
 	cerr << "Seq#1 has a different id than seq #2, exiting " << endl;
 	exit(1);
     }
     count_all ++;
-    if(al.IsFirstMate()  &&
-       al2.IsSecondMate() ){
-	read1 =string(al.QueryBases);
-	read2 =string(al2.QueryBases);
-	qual1 =string(al.Qualities);
-	qual2 =string(al2.Qualities);		    
+    //if(al.IsFirstMate()  &&
+    //al2.IsSecondMate() ){
+    if(bam_is_read1(&al) && !bam_is_read1(&al2) ){
+	// read1 =string(al.QueryBases);
+	// read2 =string(al2.QueryBases);
+	getSeq(&al, &read1);
+	getSeq(&al2,&read2);
+
+
+	getQual(&al, &qual1);
+	getQual(&al2,&qual2);
+
+	// qual1 =string(al.Qualities);
+	// qual2 =string(al2.Qualities);		    
     }else{
-	if(al2.IsFirstMate()  &&
-	   al.IsSecondMate() ){
-	    read1 =string(al2.QueryBases);
-	    qual1 =string(al2.Qualities);
-	    read2 =string(al.QueryBases);
-	    qual2 =string(al.Qualities);		    
+	//if(al2.IsFirstMate()  &&
+	//  al.IsSecondMate() ){
+	if(!bam_is_read1(&al) && bam_is_read1(&al2) ){
+	    // read1 =string(al2.QueryBases);
+	    //qual1 =string(al2.Qualities);
+	    //read2 =string(al.QueryBases);
+	    //qual2 =string(al.Qualities);
+
+	    getSeq(&al2, &read1);
+	    getSeq(&al,  &read2);
+
+
+	    getQual(&al2,&qual1);
+	    getQual(&al, &qual2);
+
+		    
 	}else{
 	    cerr << "Seq#1 must be the first mate for seq #2, exiting " << endl;
 	    exit(1);
@@ -2135,41 +2263,45 @@ bool MergeTrimReads::processPair( bam1_t  & al, bam1_t & al2){
 	string prevZQ2="";
 	//	pair<BamAlignment,BamAlignment> toReturn (al,al2);
 
-	al.SetIsFailedQC(true);
-	al.GetTag("ZQ",prevZQ1);		    
-	prevZQ1+=result.code;
-	if(al.HasTag("ZQ") ){ //this is done because bamtools was not intelligent enough to understand that "ZQ:A" becomes "ZQ:Z" when you add a char, oh well.. 
-	    al.RemoveTag("ZQ");
-	    if(al.HasTag("ZQ") ){
-		cerr << "Failed to remove tag for "<< al.Name<<endl;
-		exit(1);
-	    }
-	}
+	//al.SetIsFailedQC(true);
+	bam_set_qcfailed(&al);
 
-	if(prevZQ1 != "")
-	    if(!al.AddTag("ZQ","Z",sortUniqueChar(prevZQ1))){
-		cerr << "Error while editing tags new tag11:"<<prevZQ1 <<"#"<< endl;
-		exit(1);
-	    }
+	
+	editZQTag(&al,result.code);
+	// al.GetTag("ZQ",prevZQ1);		    
+	// prevZQ1+=result.code;
+	// if(al.HasTag("ZQ") ){ //this is done because bamtools was not intelligent enough to understand that "ZQ:A" becomes "ZQ:Z" when you add a char, oh well.. 
+	//     al.RemoveTag("ZQ");
+	//     if(al.HasTag("ZQ") ){
+	// 	cerr << "Failed to remove tag for "<< al.Name<<endl;
+	// 	exit(1);
+	//     }
+	// }
 
-		   
+	// if(prevZQ1 != "")
+	//     if(!al.AddTag("ZQ","Z",sortUniqueChar(prevZQ1))){
+	// 	cerr << "Error while editing tags new tag11:"<<prevZQ1 <<"#"<< endl;
+	// 	exit(1);
+	//     }
 
-	al2.SetIsFailedQC(true);
-	al2.GetTag("ZQ",prevZQ2);
-	prevZQ2+=result.code;
-	if(al2.HasTag("ZQ") ){ 
-	    al2.RemoveTag("ZQ");
-	    if(al2.HasTag("ZQ") ){ 
-		cerr << "Failed to remove tag for "<< al2.Name<< endl;
-		exit(1);
-	    }
-	}
+	//al2.SetIsFailedQC(true);		   
+	bam_set_qcfailed(&al2);
+	editZQTag(&al,result.code);
+	// al2.GetTag("ZQ",prevZQ2);
+	// prevZQ2+=result.code;
+	// if(al2.HasTag("ZQ") ){ 
+	//     al2.RemoveTag("ZQ");
+	//     if(al2.HasTag("ZQ") ){ 
+	// 	cerr << "Failed to remove tag for "<< al2.Name<< endl;
+	// 	exit(1);
+	//     }
+	// }
 
-	if(prevZQ2 != "")
-	    if(!al2.AddTag("ZQ","Z",sortUniqueChar(prevZQ2))){
-		cerr << "Error while editing tags new tag21:" << prevZQ2<<"#"<<endl;
-		exit(1);
-	    }
+	// if(prevZQ2 != "")
+	//     if(!al2.AddTag("ZQ","Z",sortUniqueChar(prevZQ2))){
+	// 	cerr << "Error while editing tags new tag21:" << prevZQ2<<"#"<<endl;
+	// 	exit(1);
+	//     }
 
 		  
 		    
@@ -2195,14 +2327,16 @@ bool MergeTrimReads::processPair( bam1_t  & al, bam1_t & al2){
     if(result.sequence != ""){ //new sequence
 	//BamAlignment toWrite (al);//build from the previous one
 	string towriteZQ="";
-	al.GetTag("ZQ",towriteZQ);   //get from the first one
+	//al.GetTag("ZQ",towriteZQ);   //get from the first one
+	getTagZ(al,"ZQ",towriteZQ);
 	// string towriteZQ2="";
 	// al2.GetTag("ZQ",towriteZQ2);  //get from the first one
 
-
-	al.AlignmentFlag=4; 	//not failed
-	
-	al.SetIsFailedQC( al.IsFailedQC() && al2.IsFailedQC() ); //fail the new one if both fail 
+	al->core.flag=4;
+	//al.AlignmentFlag=4; 	//not failed
+	 
+	bam_set_qcfailed( bam_is_qcfailed(al) && bam_is_qcfailed(al2) );
+	//al.SetIsFailedQC( al.IsFailedQC() && al2.IsFailedQC() ); //fail the new one if both fail 
 	
 	al.Position    = -1;
 	al.MapQuality  =  0;

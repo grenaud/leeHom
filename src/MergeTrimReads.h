@@ -28,6 +28,25 @@ extern "C" {
 
 #include "utils.h"
 
+
+#define bam_is_reverse(b)     (((b)->core.flag&BAM_FREVERSE)    != 0)
+#define bam_is_unmapped(b)    (((b)->core.flag&BAM_FUNMAP)      != 0)
+#define bam_is_paired(b)      (((b)->core.flag&BAM_FPAIRED)     != 0)
+#define bam_is_propaired(b)   (((b)->core.flag&BAM_FPROPER_PAIR) != 0)
+#define bam_is_read1(b)       (((b)->core.flag&BAM_FREAD1)      != 0)
+
+#define bam_is_qcfailed(b)    (((b)->core.flag&BAM_FQCFAIL)     != 0)
+#define bam_set_qcfailed(b)   ( (b)->core.flag = (b)->core.flag | BAM_FQCFAIL   )
+#define bam_is_rmdup(b)       (((b)->core.flag&BAM_FDUP)        != 0)
+#define bam_is_sec(b)         (((b)->core.flag&BAM_FSECONDARY)        != 0)
+#define bam_is_supp(b)        (((b)->core.flag&BAM_FSUPPLEMENTARY)    != 0)
+
+#define bam_is_failed(b)      ( bam_is_qcfailed(b) || bam_is_rmdup(b) || bam_is_sec(b) || bam_is_supp(b) )
+
+#define bam_mqual(b)          ((b)->core.qual)
+#define bam_isize(b)          ((b)->core.isize)
+#define bam_lqseq(b)          ((b)->core.l_qseq)
+
 using namespace std;
 using namespace BamTools;
 /* using namespace boost::math; */
@@ -136,10 +155,19 @@ class MergeTrimReads{
     inline double randomGen();
     inline baseQual cons_base_prob(baseQual  base1,baseQual base2);
     inline baseQual cons_base_probInit(baseQual  base1,baseQual base2);
+
+
     inline bool hasTag(const bam1_t    *al,const string & tag);
-    inline void addTagi(bam1_t    *al,const int tag);
-    inline void addTagZ(bam1_t    *al,const string & tag);
-   
+    inline void addTagi(bam1_t    *al,const string & tag, const int32_t  val);
+    inline void addTaga(bam1_t    *al,const string & tag, const char     val);
+    inline void addTagZ(bam1_t    *al,const string & tag, const string & val);
+    inline string getTagZ(bam1_t    *al,const string & tag);
+
+    inline void editZQTag(bam1_t  *al,const char code);
+    inline void removeTag(bam1_t  *al,const string & tag);
+
+    inline void getSeq( const bam1_t * al,string * strseq);
+    inline void getQual(const bam1_t * al,string * strqual);
 
 
     /* double computePDF(const double x); */
