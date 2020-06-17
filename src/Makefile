@@ -10,16 +10,12 @@ LDLIBS+=  ../bamtools/build/src/utils/CMakeFiles/BamTools-utils.dir/*cpp.o ../ba
 
 
 
-all:    ../bamtools/build/src/api/libbamtools.a ../libgab/utils.o MergeTrimReads.o leeHom leeHomMulti
+all:    ../bamtools/build/src/api/libbamtools.a ../libgab/utils.o MergeTrimReads.o leeHom
 
 %.o: %.cpp
 	${CXX} -c ${CXXFLAGS} $^ 
 
-leeHom: leeHom.o  MergeTrimReads.o ../libgab/PutProgramInHeader.o ../libgab/FastQObj.o  ../libgab/FastQParser.o  ../libgab/gzstream/libgzstream.a
-	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS)
-
-
-leeHomMulti: leeHomMulti.o  MergeTrimReads.o ../libgab/PutProgramInHeader.o  ../libgab/FastQObj.o  ../libgab/FastQParser.o ../libgab/gzstream/libgzstream.a
+leeHom: leeHom.o  MergeTrimReads.o ../libgab/PutProgramInHeader.o  ../libgab/FastQObj.o  ../libgab/FastQParser.o ../libgab/gzstream/libgzstream.a
 	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS) 
 
 ../libgab/utils.h:
@@ -38,5 +34,5 @@ leeHomMulti: leeHomMulti.o  MergeTrimReads.o ../libgab/PutProgramInHeader.o  ../
 	cd ../bamtools/ &&  mkdir -p build/  && cd build/ && cmake .. && make && cd ../..
 
 clean:
-	rm -f leeHom leeHomMulti *.o
+	rm -f leeHom *.o
 

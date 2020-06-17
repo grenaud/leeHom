@@ -1,6 +1,6 @@
 # leeHom: Bayesian reconstruction of ancient DNA fragments
 
-_QUESTIONS:_ gabriel [dot] reno [ at sign ] gmail.com
+QUESTIONS: gabriel [dot] reno [ at sign ] gmail.com
 
 ## About
 leeHom is a program for the Bayesian reconstruction of ancient DNA (the binary is mergeTrimReadsBAM).

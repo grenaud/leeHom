@@ -41,6 +41,25 @@ typedef struct {
     double prob;
 } baseQual;
 
+class fqrecord{
+ public:
+    char   code;
+    //merged
+    string sequence;
+    string quality;
+
+    string d1;
+    string s1;
+    string q1;
+    string d2;
+    string s2;
+    string q2;
+    string cmt;
+    
+
+    bool paired;
+};
+
 class MergeTrimReads{
  private:
     //VARIABLES
@@ -250,6 +269,13 @@ class MergeTrimReads{
     double scale;
     bool   useDist;
     //lognormal_distribution<> p;
+    void bamAlgnToString( BamAlignment & al ,
+			  BamAlignment & al2,
+			  string & read1,
+			  string & read2,
+			  string & qual1,
+			  string & qual2);
+    void inferadaptPair(   string & read1,string & read2,string & qual1,string & qual2,vector<string> & adapterSeqs_fwd, vector< vector<int>  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< vector<int>  > & qualadaptSeq_rev);
 
  public:
     MergeTrimReads (const string& forward_, const string& reverse_, const string& chimera_,
@@ -263,9 +289,15 @@ class MergeTrimReads{
     merged process_PE(string  read1,string  qual1,string read2,string qual2);
     merged process_SR(string  read1, string qual1);
 
-
+    void setFadapter(const string& forward_);
+    void setRadapter(const string& reverse_);
+		    
     /* pair<BamAlignment,BamAlignment> processPair(const BamAlignment & al,const BamAlignment & al2); */
     /* BamAlignment                    processSingle(const BamAlignment & al); */
+    string mlConsensus(vector<string> & adapterSeqs, vector< vector<int>  > & qualadaptSeq,const float threshold=0.99);
+    void inferadaptPairFQ(fqrecord & fr, vector<string> & adapterSeqs_fwd, vector< vector<int>  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< vector<int>  > & qualadaptSeq_rev);
+
+    void inferadaptPairBAM(   BamAlignment & al , BamAlignment & al2,vector<string> & adapterSeqs_fwd, vector< vector<int>  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< vector<int>  > & qualadaptSeq_rev);
     bool processPair(   BamAlignment & al , BamAlignment & al2);
     void processSingle( BamAlignment & al );
 

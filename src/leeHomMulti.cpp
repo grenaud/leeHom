@@ -1,9 +1,3 @@
-/*
- * threadsFastq
- * Date: Feb-27-2016 
- * Author : Gabriel Renaud gabriel.reno [at sign here ] gmail.com
- *
- */
 
 #include <iostream>
 #include <fstream>
@@ -19,6 +13,8 @@
 #include "FastQParser.h"
 
 #include "utils.h"
+
+//TODO char qualscore to like
 
 //#define DEBUG 
 
@@ -164,24 +160,6 @@ queue< DataChunk * >                                               queueDataTopr
 priority_queue<DataChunk *, vector<DataChunk *>, CompareDataChunk > queueDataTowrite;
 
 //fq
-class fqrecord{
- public:
-    char   code;
-    //merged
-    string sequence;
-    string quality;
-
-    string d1;
-    string s1;
-    string q1;
-    string d2;
-    string s2;
-    string q2;
-    string cmt;
-    
-
-    bool paired;
-};
 
 class DataChunkFQ{
 private:
@@ -252,7 +230,8 @@ int maxQueueDataToprocessSize=10;
 
 int    timeThreadSleep = 1;
 bool      readDataDone = false;
-unsigned int sizeChunk = 5000;
+unsigned int sizeChunkDefault = 5000;
+unsigned int sizeChunk        = 5000;
 
 int numberOfThreads=1;
 
@@ -1617,6 +1596,133 @@ bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,Merge
 }
 
 
+bool setPairedDetectAdapters(vector<string>         & adapterSeqs_fwd,
+			     vector< vector<int>  > & qualadaptSeq_fwd,
+			     vector<string>         & adapterSeqs_rev,
+			     vector< vector<int>  > & qualadaptSeq_rev){
+
+    //collecting the adapters
+    string fwd_adapt=mtr->mlConsensus(adapterSeqs_fwd,qualadaptSeq_fwd);
+    
+    float fwdIfrac;
+    int   fwdI=0;
+    for(unsigned int i=0;i<fwd_adapt.size();i++){	
+	if(fwd_adapt[i] == 'I'){
+	    fwdI++;
+	}
+    }
+    fwdIfrac = (float( fwdI) /float( fwd_adapt.size() ) );
+    float thresholdUndefined = 0.2;
+
+    bool errorFound=false;
+    if(fwdIfrac < thresholdUndefined){
+	cerr<<"Inferred fwd adapter: "<<fwd_adapt<<endl;
+	mtr->setFadapter(fwd_adapt);
+    }else{
+	cerr<<"Cannot infer the forward adapter, only found "<<fwd_adapt<<" fraction undefined: "<<(fwdIfrac*100)<<"%"<<" threshold: "<<(thresholdUndefined*100)<<"%"<<endl;
+	errorFound=true;
+	//return false;
+    }
+    
+    string rev_adapt=mtr->mlConsensus(adapterSeqs_rev,qualadaptSeq_rev);
+
+    float revIfrac;
+    int   revI=0;
+    for(unsigned int i=0;i<rev_adapt.size();i++){	
+	if(rev_adapt[i] == 'I'){
+	    revI++;
+	}
+    }
+    revIfrac = (float( revI) /float( rev_adapt.size() ) );
+    if(revIfrac < thresholdUndefined){
+	cerr<<"Inferred rev adapter: "<<rev_adapt<<endl;
+	mtr->setRadapter(rev_adapt);		
+    }else{
+	cerr<<"Cannot infer the reverse adapter, only found "<<rev_adapt<<" fraction undefined: "<<(revIfrac*100)<<"%"<<" threshold: "<<(thresholdUndefined*100)<<"%"<<endl;
+	errorFound=true;
+	//return false;
+    }
+
+    if(errorFound)
+	return false;
+    
+    return true;
+
+}
+				 
+
+bool detectAdaptBAM(const DataChunk * currentChunk){
+
+    BamAlignment al;
+    BamAlignment al2;
+    bool al2Null=true;
+    vector<string>          adapterSeqs_fwd;
+    vector< vector<int>  > qualadaptSeq_fwd;
+    vector<string>          adapterSeqs_rev;
+    vector< vector<int>  > qualadaptSeq_rev;
+
+    //iterating over each record in the chunk
+    for(unsigned i=0;i<currentChunk->dataToProcess->size();i++){
+	
+	al = currentChunk->dataToProcess->at(i);
+	
+	if(al.IsPaired() && 
+	   al2Null ){
+	    al2=al;
+	    al2Null=false;
+	    continue;
+	}else{
+	    if(al.IsPaired() && 
+	       !al2Null){
+				
+		//bool  result =  mtr->processPair(al,al2);
+		mtr->inferadaptPairBAM(al ,al2,adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
+		
+	    }else{ 
+
+		//mtr->processSingle(al);
+		cerr<<"The automatic detection of the adapters is not yet coded for single-end reads"<<endl;
+		exit(1);
+	    } //end single end
+	    al2Null=true;
+	}//second pair		    
+
+    }
+
+    return setPairedDetectAdapters(adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
+}
+
+
+
+
+bool detectAdaptFQ(const DataChunkFQ * currentChunk){
+    fqrecord fr;
+
+    vector<string>          adapterSeqs_fwd;
+    vector< vector<int>  > qualadaptSeq_fwd;
+    vector<string>          adapterSeqs_rev;
+    vector< vector<int>  > qualadaptSeq_rev;
+
+    //iterating over each record in the chunk
+    for(unsigned i=0;i<currentChunk->dataToProcess->size();i++){
+	
+	fr = currentChunk->dataToProcess->at(i);
+	
+	if( fr.paired ){
+	    mtr->inferadaptPairFQ(fr,adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
+	}else{
+	    //mtr->processSingle(al);
+	    cerr<<"The automatic detection of the adapters is not yet coded for single-end reads"<<endl;
+	    exit(1);
+	}//second pair
+		    
+
+    }
+
+    return setPairedDetectAdapters(adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
+}
+
+		    
 
 int main (int argc, char *argv[]) {
 
@@ -1655,7 +1761,9 @@ int main (int argc, char *argv[]) {
     bool useDist=false;
     double location=-1.0;
     double scale   =-1.0;
+    bool detectAdapt=false;
 
+    bool specifiedAdapt=false;
     bool fastqFormat=false;
     string fastqfile1   = "";
     string fastqfile2   = "";
@@ -1705,19 +1813,21 @@ int main (int argc, char *argv[]) {
 			      "\t\t\t\t\t\t\tSuch reads will be marked as PCR duplicates\n\n"
 			      "\t\t"+"-f , --adapterFirstRead" +"\t\t\t"+"Adapter that is observed after the forward read (def. Multiplex: "+options_adapter_F_BAM.substr(0,30)+")"+"\n"+
 			      "\t\t"+"-s , --adapterSecondRead" +"\t\t"+"Adapter that is observed after the reverse read (def. Multiplex: "+options_adapter_S_BAM.substr(0,30)+")"+"\n"+
+			      "\t\t"+"     --auto" +"\t\t\t\t"+"Auto detect adapters, requires at least 1M reads, does NOT currently support UMIs (def. : "+boolStringify(detectAdapt)+")"+"\n"+
+
 			      "\t\t"+"-c , --FirstReadChimeraFilter" +"\t\t"+"If the forward read looks like this sequence, the cluster is filtered out.\n\t\t\t\t\t\t\tProvide several sequences separated by comma (def. Multiplex: "+options_adapter_chimera_BAM.substr(0,30)+")"+"\n"+
 			      "\t\t"+"-k , --key"+"\t\t\t\t"+"Key sequence with which each sequence starts. Comma separate for forward and reverse reads. (default '"+key+"')"+"\n"+
 			      "\t\t"+"--trimkey"     +"\t\t\t\t"+"Trim the key sequence even for untrimmed. (default '"+boolStringify(trimKey)+"')"+"\n"+
 
 			      "\t\t"+"-i , --allowMissing"+"\t\t\t"+"Allow one base in one key to be missing or wrong. (default "+boolStringify(allowMissing)+")"+"\n"+
 
-			      "\t\t"+"--umif [bp]"+"\t\t\t"+"Extract bp for the UMI for the forward read. (default "+stringify(umif)+")"+"\n"+
-			      "\t\t"+"--umir [bp]"+"\t\t\t"+"Extract bp for the UMI for the reverse read. (default "+stringify(umir)+")"+"\n"+
+			      "\t\t"+"--umif [bp]"+"\t\t\t\t"+"Extract bp for the UMI for the forward read. (default "+stringify(umif)+")"+"\n"+
+			      "\t\t"+"--umir [bp]"+"\t\t\t\t"+"Extract bp for the UMI for the reverse read. (default "+stringify(umir)+")"+"\n"+
 			      
-			      "\t\t"+"--umtf [bp]"+"\t\t\t"+"Remove overhangs of bp after the UMI for the forward read. (default "+stringify(umiTf)+")"+"\n"+
-			      "\t\t"+"--umtr [bp]"+"\t\t\t"+"Remove overhangs of bp after the UMI for the reverse read. (default "+stringify(umiTr)+")"+"\n"+
+			      "\t\t"+"--umtf [bp]"+"\t\t\t\t"+"Remove overhangs of bp after the UMI for the forward read. (default "+stringify(umiTf)+")"+"\n"+
+			      "\t\t"+"--umtr [bp]"+"\t\t\t\t"+"Remove overhangs of bp after the UMI for the reverse read. (default "+stringify(umiTr)+")"+"\n"+
 
-			      "\t\t"+"--trimCutoff"+"\t\t\t"+"Lowest number of adapter bases to be observed for single Read trimming (default "+stringify(trimCutoff)+")");
+			      "\t\t"+"--trimCutoff"+"\t\t\t\t"+"Lowest number of adapter bases to be observed for single Read trimming (default "+stringify(trimCutoff)+")");
 
     if( (argc== 1) ||
     	(argc== 2 && string(argv[1]) == "-h") ||
@@ -1736,7 +1846,7 @@ int main (int argc, char *argv[]) {
 
 	if(strcmp(argv[i],"-t") == 0 ){
 	    numberOfThreads =destringify<int>(argv[i+1]);
-	    sizeChunk       =5000*numberOfThreads;
+	    sizeChunk       =sizeChunkDefault*numberOfThreads;
 	    i++;
 	    continue;
 	}
@@ -1804,6 +1914,11 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(strcmp(argv[i],"--auto") == 0  ){
+	    detectAdapt=true;
+	    continue;
+	}
+
 	if(string(argv[i]) == "--phred64"  ){
 	    qualOffset=64;
 	    continue;
@@ -1847,6 +1962,7 @@ int main (int argc, char *argv[]) {
 
 	if(strcmp(argv[i],"-f") == 0 || strcmp(argv[i],"--adapterFirstRead") == 0 ){
 	    adapter_F =string(argv[i+1]);
+	    specifiedAdapt=true;
 	    i++;
 	    continue;
 	}
@@ -1854,6 +1970,7 @@ int main (int argc, char *argv[]) {
 
 	if(strcmp(argv[i],"-s") == 0 || strcmp(argv[i],"--adapterSecondRead") == 0 ){
 	    adapter_S =string(argv[i+1]);
+	    specifiedAdapt=true;
 	    i++;
 	    continue;
 	}
@@ -1927,17 +2044,28 @@ int main (int argc, char *argv[]) {
     bamFile=argv[argc-1];
 
     if(!fastqFormat){
-
 	if( (bamFile != "-") &&
-	    strBeginsWith(bamFile,"-")
-	    ){
+	    strBeginsWith(bamFile,"-") ){
 	    cerr<<"If running in bam input/output mode, the last argument should be the bam file."<<endl;
-	    return 1;	    
+	    return 1;
 	}
 
-	
+	if( (sizeChunk%2) != 0){
+	    cerr<<"If running in bam input/output mode, the size of the chunks (option -z) must be even."<<endl;
+	    return 1;	    
+	}
+    }else{
+	if(fastqoutfile==""){
+	    cerr<<"If running in fastq input/output mode, the output must specified."<<endl;
+	    return 1;	    	    
+	}
     }
 
+    if(specifiedAdapt && detectAdapt){
+	cerr<<"Cannot specify adapters and automatically detect them"<<endl;
+	return 1;	    
+    }
+    
     if( (location != -1.0 && scale == -1.0) ||
 	(location == -1.0 && scale != -1.0) ){
 	cerr<<"Cannot specify --location without specifying --scale"<<endl;
@@ -2023,6 +2151,11 @@ int main (int argc, char *argv[]) {
 	FastQParser * fqp2;
 
 	if(singleEndModeFQ){
+
+	    if(detectAdapt){
+		cerr<<"The automatic detection of the adapters is not yet coded for single-end reads"<<endl;
+		return 1;	    
+	    }
 	    fqp1 = new FastQParser (fastqfile1);
 
 	    string outdirs   = fastqoutfile+".fq.gz";
@@ -2070,6 +2203,10 @@ int main (int argc, char *argv[]) {
 	unsigned int counter=0;
 	int lastWrittenChunk=-1;
 
+	if(detectAdapt){
+	    //TO add 
+	}
+	
 	//unsigned int totalSeqs=0;
 	while(fqp1->hasData()){
 
@@ -2134,12 +2271,26 @@ int main (int argc, char *argv[]) {
 		fqtoadd.q1     = *(fo1->getQual());
 
 	    }
-	
 
-	    if(counter== (sizeChunk-1)){
+	    
+
+	    if(counter== ( (detectAdapt && (rank==0))?(sizeChunkDefault*10-1):((sizeChunk-1))) ){
 		     
 		currentChunkfq->dataToProcess->push_back(fqtoadd);
-	       
+		//cerr<<"sizeChunk "<<sizeChunk<<" counter "<<counter<<endl;
+		if(detectAdapt){
+		    //cerr<<"sizeChunk "<<sizeChunk<<" counter "<<counter<<endl;
+		    bool adpd=detectAdaptFQ( currentChunkfq );		    
+		    if(adpd){//worked
+			detectAdapt=false;			
+		    }else{
+			cerr << "Failed to auto detect adapters, please contact the vendor" << endl;
+			return 1;
+		    }
+		}
+
+		
+		
 		rc = pthread_mutex_lock(&mutexQueue);
 		checkResults("pthread_mutex_lock()\n", rc);
 		//cout<<"got it"<<endl;
@@ -2258,7 +2409,10 @@ int main (int argc, char *argv[]) {
 		
 		if( lastWrittenChunk == (dataToWrite->rank-1) ){
 		    queueDataTowriteFQ.pop();
+
 		    
+	    
+
 		    rc = pthread_mutex_unlock(&mutexCounter);
 		    checkResults("pthread_mutex_unlock()\n", rc);
 
@@ -2448,6 +2602,9 @@ int main (int argc, char *argv[]) {
 	    return 1;
 	}
 
+
+
+	
 	pthread_mutex_init(&mutexCERR,    NULL);
 	pthread_mutex_init(&mutexQueue,   NULL);
 	pthread_mutex_init(&mutexCounter, NULL);
@@ -2523,6 +2680,8 @@ int main (int argc, char *argv[]) {
 
 	BamAlignment al;
 
+
+	
 	while ( reader.GetNextAlignment(al) ) {
 	    
 	    //FastQObj * fo1=fqp1->getData();
@@ -2537,10 +2696,21 @@ int main (int argc, char *argv[]) {
 		}
 	    }
 
-	    if(counter== (sizeChunk-1)){
-		
+	    if( counter== ( (detectAdapt&&(rank==0))?(sizeChunkDefault*10-1):((sizeChunk-1))) ){
+		//if(counter== (sizeChunk-1)){
+		cerr<<"sizeChunk "<<sizeChunk<<" counter "<<counter<<endl;
 		//store old one
 		currentChunk->dataToProcess->push_back(al);
+
+		if(detectAdapt){
+		    bool adpd=detectAdaptBAM( currentChunk );
+		    if(adpd){//worked
+			detectAdapt=false;			
+		    }else{
+			cerr << "Failed to auto detect adapters, please contact the vendor" << endl;
+			return 1;
+		    }
+		}
 	    
 
 		rc = pthread_mutex_lock(&mutexQueue);
@@ -2601,7 +2771,6 @@ int main (int argc, char *argv[]) {
 		counter=0;
 	    }else{
 		currentChunk->dataToProcess->push_back(al);
-
 		counter++;
 	    }
 

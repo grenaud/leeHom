@@ -13,7 +13,8 @@
 // #define DEBUGPR
 // #define DEBUGSCORE
 //#define CONSENSUSCALL
-
+// #define DEBUGMLCONS
+// #define INFERADAPTPAIR
 
 const long double PI  = atanl(1.0L)*4;   
 
@@ -1342,7 +1343,7 @@ inline void MergeTrimReads::computeBestLikelihoodPairedEnd(const string &      r
     //int lengthDiffR1_R2 =  (lengthRead1-lengthRead2);
 
     for(int indexAdapter=0; //let index adapters be the index of the potential P7/P5 adapter
-	indexAdapter<(2*maxLengthForPair-min_overlap_seqs);
+	indexAdapter<int(2*maxLengthForPair-min_overlap_seqs);
 	indexAdapter++){
 	double logLike=0.0;
 
@@ -1412,8 +1413,6 @@ inline void MergeTrimReads::computeBestLikelihoodPairedEnd(const string &      r
   most likely position of the adapter is known. Using this
   information, this subroutine computes the consensus if reads
   are to be merged
-
-
 
   \param read1       The first mate
   \param qualv1      The quality scores for the first mate
@@ -1907,6 +1906,16 @@ bool MergeTrimReads::set_extra_flag( BamAlignment &al, int32_t f )
 
 
 
+void MergeTrimReads::setFadapter(const string& forward){
+    options_adapter_F.assign( forward.length(), 0 );
+    transform(forward.begin(), forward.end(), options_adapter_F.begin(), ::toupper);
+}
+
+void MergeTrimReads::setRadapter(const string& reverse){
+    options_adapter_S.assign( reverse.length(), 0 );
+    transform(reverse.begin(), reverse.end(), options_adapter_S.begin(), ::toupper);
+}
+
 
 //! General contructor
 /*!
@@ -2038,30 +2047,12 @@ MergeTrimReads::~MergeTrimReads (){
 }
 
 
-//! Processes the reads for paired-end reads 
-/*!
-  This subroutine will call process_PE() on the sequence and return a pair<> of BamAlignment objects
-  corresponding to the pair of reads. If the reads have been merged, the second object will be empty.
-  It will also fix the BAM tags accordingly.
-
-  \param al BamAlignment object as input representing the first pair
-  \param al2 BamAlignment object as input representing the first pair
-  \return True if the pair was merged and is contained within al only
-*/
-//pair<BamAlignment,BamAlignment> MergeTrimReads::processPair(const BamAlignment & al,const BamAlignment & al2){
-bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
-    //cerr<<len_key1<<" "<<len_key2<<" "<<al.QueryBases<<" "<<al2.QueryBases<<endl;
-
-    string read1;
-    string read2;
-    string qual1;
-    string qual2;
-
-    if(al.Name != al2.Name ){
-	cerr << "Seq#1 has a different id than seq #2, exiting " << endl;
-	exit(1);
-    }
-    count_all ++;
+void MergeTrimReads::bamAlgnToString( BamAlignment & al ,
+				      BamAlignment & al2,
+				      string & read1,
+				      string & read2,
+				      string & qual1,
+				      string & qual2){
     if(al.IsFirstMate()  &&
        al2.IsSecondMate() ){
 	read1 =string(al.QueryBases);
@@ -2089,6 +2080,309 @@ bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
     }
     
 
+}
+
+
+//! maximum likelihood consensus
+/*!
+  
+  \param adapterSeqs vector of detected adapters sequences
+  \param qualadaptSeq quality scores for each adapter sequences
+  \return Maximum-likelihood consensus as a string
+*/
+
+string MergeTrimReads::mlConsensus(vector<string> & adapterSeqs, vector< vector<int>  > & qualadaptSeq,const float threshold){
+    const string dnaAlphabet  = "ACGT";
+    string adapter="";
+    double thresLog = log( 1-threshold )/log(10);
+    
+    for(unsigned int k=0;k<=(unsigned int)maxadapter_comp;k++){//each base of the adapter to infer
+
+#ifdef DEBUGMLCONS
+	cerr<<"index adpt "<<k<<endl;	
+#endif
+	double ll[4];
+	
+	for(unsigned int j=0;j<4;j++){//each potential DNA base
+
+	    ll[j]=0;
+	    for(unsigned int i=0;i<adapterSeqs.size();i++){
+		if(k<adapterSeqs[i].size()){//if there is data left
+#ifdef DEBUGMLCONS
+		    //cerr<<"obs#"<<i<<" "<<adapterSeqs[i][k]<<" "<<qualadaptSeq[i][k]<<" "<<ll[j]<<endl;
+#endif
+
+		    if( adapterSeqs[i][k] != 'N'){ //resolved base
+			if( dnaAlphabet[j] == adapterSeqs[i][k]){
+			    ll[j]+=likeMatch[ qualadaptSeq[i][k]  ];
+			}else{
+			    ll[j]+=likeMismatch[ qualadaptSeq[i][k]  ];
+			}
+		    }else{//unresolved base
+			ll[j]+=likeRandomMatch;
+		    }			
+		}
+	    }
+
+
+#ifdef DEBUGMLCONS
+	    cerr<<"base: "<<dnaAlphabet[j]<<" "<<ll[j]<<endl;
+#endif
+
+	    
+	}//each DNA base
+
+	double num=0;
+	double den=0;
+	int bestLlidx=0;
+	double bestLl=ll[0];
+	for(unsigned int j=1;j<4;j++){
+	    if(ll[j] > bestLl){
+		bestLl    = ll[j];
+		bestLlidx = j;
+	    }
+	}
+	
+	for(int j=0;j<4;j++){
+	    if(j!=bestLlidx)		
+		num = oplusInit( num , ll[j] );
+	    den = oplusInit( den , ll[j] );
+	}
+	if( (num-den) < thresLog){
+	    adapter+=dnaAlphabet[bestLlidx];
+	}else{
+	    adapter+='I';
+	}
+#ifdef DEBUGMLCONS
+	cerr<<"base: "<<dnaAlphabet[bestLlidx]<<" "<<num<<" "<<den<<" "<<(num-den)<<" "<<thresLog<<endl;
+#endif
+
+    }
+
+#ifdef DEBUGMLCONS
+    cerr<<adapter<<endl;
+#endif
+
+    return adapter;
+    
+}
+
+
+//! Infer the adapter sequence for paired-end reads 
+/*!
+  
+  \param al BamAlignment object as input representing the first pair
+  \param al2 BamAlignment object as input representing the first pair
+  \return True if the pair was merged and is contained within al only
+*/
+
+void MergeTrimReads::inferadaptPairBAM( BamAlignment & al, BamAlignment & al2, vector<string> & adapterSeqs_fwd, vector< vector<int>  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< vector<int>  > & qualadaptSeq_rev){
+
+    string read1;
+    string read2;
+    string qual1;
+    string qual2;
+
+    if(al.Name != al2.Name ){
+	cerr << "Seq#1 ("<<al.Name<<") has a different id than seq #2 ("<<al2.Name<<"), exiting " << endl;
+	exit(1);
+    }
+
+    
+    bamAlgnToString( al ,  al2,  read1, read2, qual1, qual2);
+
+    inferadaptPair( read1, read2, qual1,qual2,adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
+}
+
+void MergeTrimReads::inferadaptPairFQ(  fqrecord & fr,vector<string> & adapterSeqs_fwd, vector< vector<int>  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< vector<int>  > & qualadaptSeq_rev){
+
+    
+    inferadaptPair( fr.s1,fr.s2,
+		    fr.q1,fr.q2,
+		    adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
+}
+
+
+
+void  MergeTrimReads::inferadaptPair(   string & read1,string & read2,string & qual1,string & qual2,vector<string> & adapterSeqs_fwd, vector< vector<int>  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< vector<int>  > & qualadaptSeq_rev){
+
+#ifdef INFERADAPTPAIR
+    cerr<<read1<<" "<<qual1<<endl;
+    cerr<<read2<<" "<<qual2<<endl;
+#endif
+
+
+    sanityCheckLength(read1,qual1);
+    sanityCheckLength(read2,qual2);
+
+    
+    vector<int> qualv1  (qual1.size(),2);
+    vector<int> qualv2  (qual2.size(),2);
+
+    string2NumericalQualScores(qual1,qualv1);
+    string2NumericalQualScores(qual2,qualv2);
+
+    int lengthRead1 = int(read1.size());
+    int lengthRead2 = int(read2.size());
+
+    double logLikeSecondRead      = double(lengthRead2)*likeRandomMatch;
+    double logLikeFirstRead       = double(lengthRead1)*likeRandomMatch;
+    double logLikelihoodTotal     = logLikeFirstRead + logLikeSecondRead;
+
+    int logLikelihoodTotalIdx     = -1;
+    //int logLikelihoodTotalMatches =0;
+
+    //computing rev compl for read 2
+    string  read2_rev=  revcompl(read2);
+    string  qual2_rev=           qual2;
+
+    reverse(qual2_rev.begin(), 
+	    qual2_rev.end());
+    
+    vector<int> qualv2_rev (qualv2);
+
+    reverse(qualv2_rev.begin(), 
+	    qualv2_rev.end());
+
+    int maxLengthForPair=max(lengthRead1,lengthRead2);
+    //second best hit
+    double sndlogLikelihoodTotal      = -DBL_MAX;
+    //int sndlogLikelihoodTotalIdx      = -1;
+    //int sndlogLikelihoodTotalMatches  =  0;
+    double logLikelihoodRND     = double(lengthRead1+lengthRead2)*likeRandomMatch;
+
+
+    
+
+
+    //int lengthDiffR1_R2 =  (lengthRead1-lengthRead2);
+
+    for(int indexAdapter=0; //let index adapters be the index of the potential P7/P5 adapter
+	indexAdapter<int(2*maxLengthForPair-min_overlap_seqs);
+	indexAdapter++){
+	double logLike=0.0;
+
+ 	// double iterations=0;
+	int    matches   =0;
+
+	if(indexAdapter > maxLengthForPair) //partial overlap
+	    //if(!options_mergeoverlap) //no point in continuing 
+	    if(!ancientDNA)
+		break;
+	    
+	//adapters
+
+	int extraBases1 = max(0,int(read1.length())-int(indexAdapter)-1);
+	//cerr<<"indexAdapter "<<indexAdapter<<" rl "<<read1.length()<<" extraBases1 "<<extraBases1<<endl;
+ 	//if(indexAdapter<lengthRead1)
+	logLike  +=  double( extraBases1 ) * likeRandomMatch; //detectAdapter(    read1 ,     qualv1     , options_adapter_F,indexAdapter, &matches);
+
+	int extraBases2 = max(0,int(read2.length())-int(indexAdapter)-1);
+
+	//cerr<<"indexAdapter "<<indexAdapter<<" rl "<<read2.length()<<" extraBases2 "<<extraBases2<<endl;
+ 	///if(indexAdapter<lengthRead2)
+	logLike  +=  double( extraBases2 ) * likeRandomMatch;//detectAdapter(    read2 ,     qualv2     , options_adapter_S,indexAdapter, &matches);
+
+	if( (extraBases1 == 0) && (extraBases2 == 0) ){//no more extra bases potentially from the adapters
+	    break;
+	}
+	
+	//overlap
+	logLike  +=	 measureOverlap(   read1      ,
+					   qualv1     ,
+					   read2_rev  ,
+					   qualv2_rev ,  
+					   maxLengthForPair,					      
+					   indexAdapter,
+					   &matches);
+
+	
+#ifdef INFERADAPTPAIR
+    cerr<<"idx: "<<indexAdapter<<"\ttl:\t"<<logLike<<"\tlr:"<<"\tit:"<<"\tma:"<<matches<<endl;    
+#endif
+
+	//#ifdef DEBUGPR
+	//cerr<<"idx: "<<indexAdapter<<"\ttl:\t"<<logLike<<"\tlr:"<<"\tit:"<<"\tma:"<<matches<<endl;
+    	//cerr<<logLike1<<"\t"<<logLike2<<"\t"<<logLike3<<endl;
+	//#endif
+	
+    	if(logLikelihoodTotal < logLike){
+    	    sndlogLikelihoodTotal        = logLikelihoodTotal;
+    	    //sndlogLikelihoodTotalIdx     = logLikelihoodTotalIdx;
+	    
+    	    logLikelihoodTotal           = logLike;
+    	    logLikelihoodTotalIdx        = indexAdapter;
+    	}else{ 
+    	    if(sndlogLikelihoodTotal < logLike){ //not more likely than first but more likely than second
+    		sndlogLikelihoodTotal        = logLike;
+    		//sndlogLikelihoodTotalIdx     = indexAdapter;
+    	    }
+    	}
+        
+    }
+
+
+#ifdef INFERADAPTPAIR
+    cerr<<"ll="<<logLikelihoodTotal<<" llidx="<<logLikelihoodTotalIdx<<" sndll="<<sndlogLikelihoodTotal<<" cut="<<log10fastModeProbError<<" rnd="<<logLikelihoodRND<<" "<<(sndlogLikelihoodTotal - logLikelihoodTotal)<<" "<<( logLikelihoodRND - logLikelihoodTotal)<<endl;
+#endif
+
+    double llCutoff=-40.0;
+    if( logLikelihoodTotalIdx != -1 &&
+	( (sndlogLikelihoodTotal - logLikelihoodTotal) < llCutoff ) &&
+	( (logLikelihoodRND      - logLikelihoodTotal) < llCutoff )  ){
+#ifdef INFERADAPTPAIR	
+	cerr<<endl<<"Found"<<endl;
+#endif
+	if(logLikelihoodTotalIdx<int(read1.size())){	    
+
+#ifdef INFERADAPTPAIR	
+	    cerr<<read1<<endl;
+	    cerr<<string(logLikelihoodTotalIdx,' ')<<read1.substr(    logLikelihoodTotalIdx,read1.size()    )<<endl;
+#endif	    
+	    adapterSeqs_fwd.push_back( read1.substr(    logLikelihoodTotalIdx,read1.size()    ));
+	    qualadaptSeq_fwd.push_back(  vector<int>(qualv1.begin() + logLikelihoodTotalIdx, qualv1.end()) );
+	}
+
+	if(logLikelihoodTotalIdx<int(read2.size())){
+#ifdef INFERADAPTPAIR	
+	    cerr<<read2<<endl;
+	    cerr<<string(logLikelihoodTotalIdx,' ' )<<read2.substr(logLikelihoodTotalIdx,read2.size())<<endl;
+#endif
+	    adapterSeqs_rev.push_back(   read2.substr(logLikelihoodTotalIdx,read2.size()));
+	    qualadaptSeq_rev.push_back(  vector<int>(qualv2.begin() + logLikelihoodTotalIdx, qualv2.end()) );
+	}
+    }
+	
+}
+
+//! Processes the reads for paired-end reads 
+/*!
+  This subroutine will call process_PE() on the sequence and return a pair<> of BamAlignment objects
+  corresponding to the pair of reads. If the reads have been merged, the second object will be empty.
+  It will also fix the BAM tags accordingly.
+
+  \param al BamAlignment object as input representing the first pair
+  \param al2 BamAlignment object as input representing the first pair
+  \return True if the pair was merged and is contained within al only
+*/
+//pair<BamAlignment,BamAlignment> MergeTrimReads::processPair(const BamAlignment & al,const BamAlignment & al2){
+bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
+    //cerr<<len_key1<<" "<<len_key2<<" "<<al.QueryBases<<" "<<al2.QueryBases<<endl;
+
+    string read1;
+    string read2;
+    string qual1;
+    string qual2;
+
+    if(al.Name != al2.Name ){
+	cerr << "Seq#1 ("<<al.Name<<") has a different id than seq #2 ("<<al2.Name<<"), exiting " << endl;
+	exit(1);
+    }
+    count_all ++;
+    
+    bamAlgnToString(al ,  al2,  read1, read2, qual1, qual2);
+
+	
     merged result=process_PE(read1,qual1,
 			     read2,qual2);
 
