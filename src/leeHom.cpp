@@ -2698,7 +2698,7 @@ int main (int argc, char *argv[]) {
 
 	    if( counter== ( (detectAdapt&&(rank==0))?(sizeChunkDefault*10-1):((sizeChunk-1))) ){
 		//if(counter== (sizeChunk-1)){
-		cerr<<"sizeChunk "<<sizeChunk<<" counter "<<counter<<endl;
+		//cerr<<"sizeChunk "<<sizeChunk<<" counter "<<counter<<endl;
 		//store old one
 		currentChunk->dataToProcess->push_back(al);
 
