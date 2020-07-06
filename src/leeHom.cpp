@@ -1597,9 +1597,9 @@ bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,Merge
 
 
 bool setPairedDetectAdapters(vector<string>         & adapterSeqs_fwd,
-			     vector< vector<int>  > & qualadaptSeq_fwd,
+			     vector<string> & qualadaptSeq_fwd,
 			     vector<string>         & adapterSeqs_rev,
-			     vector< vector<int>  > & qualadaptSeq_rev){
+			     vector<string> & qualadaptSeq_rev){
 
     //collecting the adapters
     string fwd_adapt=mtr->mlConsensus(adapterSeqs_fwd,qualadaptSeq_fwd);
@@ -1656,10 +1656,10 @@ bool detectAdaptBAM(const DataChunk * currentChunk){
     BamAlignment al;
     BamAlignment al2;
     bool al2Null=true;
-    vector<string>          adapterSeqs_fwd;
-    vector< vector<int>  > qualadaptSeq_fwd;
-    vector<string>          adapterSeqs_rev;
-    vector< vector<int>  > qualadaptSeq_rev;
+    vector<string> adapterSeqs_fwd;
+    vector<string> qualadaptSeq_fwd;
+    vector<string> adapterSeqs_rev;
+    vector<string> qualadaptSeq_rev;
 
     //iterating over each record in the chunk
     for(unsigned i=0;i<currentChunk->dataToProcess->size();i++){
@@ -1698,10 +1698,10 @@ bool detectAdaptBAM(const DataChunk * currentChunk){
 bool detectAdaptFQ(const DataChunkFQ * currentChunk){
     fqrecord fr;
 
-    vector<string>          adapterSeqs_fwd;
-    vector< vector<int>  > qualadaptSeq_fwd;
-    vector<string>          adapterSeqs_rev;
-    vector< vector<int>  > qualadaptSeq_rev;
+    vector<string> adapterSeqs_fwd;
+    vector<string> qualadaptSeq_fwd;
+    vector<string> adapterSeqs_rev;
+    vector<string> qualadaptSeq_rev;
 
     //iterating over each record in the chunk
     for(unsigned i=0;i<currentChunk->dataToProcess->size();i++){
@@ -2598,8 +2598,9 @@ int main (int argc, char *argv[]) {
 	//else BAM
 
 	if( bamFileOUT == ""  ){
-	    cerr<<"The output must be a be specified, exiting"<<endl;
-	    return 1;
+	    // cerr<<"The output must be a be specified, exiting"<<endl;
+	    // return 1;
+	    bamFileOUT = "/dev/stdout" ;
 	}
 
 

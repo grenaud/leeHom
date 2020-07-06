@@ -184,53 +184,84 @@ void MergeTrimReads::initMerge(){
     //anyway, we set the min for qual scores at 2
     for(int i=0;i<2;i++){
 
-	likeMatch[i]        = log1p(    -pow(10.0,2.0/-10.0) )    /log(10);	    
-        likeMismatch[i]     = log  (     pow(10.0,2.0/-10.0)/3.0 )/log(10);
+	likeMatch[i+qualOffset]        = log1p(    -pow(10.0,2.0/-10.0) )    /log(10);	    
+        likeMismatch[i+qualOffset]     = log  (     pow(10.0,2.0/-10.0)/3.0 )/log(10);
 
-	likeMatchProb[i]           = 1.0-pow(10.0,2.0/-10.0) ;
-        likeMismatchProb[i]        =     pow(10.0,2.0/-10.0)/3.0 ;
+	likeMatchProb[i+qualOffset]           = 1.0-pow(10.0,2.0/-10.0) ;
+        likeMismatchProb[i+qualOffset]        =     pow(10.0,2.0/-10.0)/3.0 ;
  
-	probForQual[i]      = max(double(1.0)-pow(double(10.0),double(2.0)/double(-10.0)),
-				  max_prob_N);
+	probForQual[i+qualOffset]       = max(double(1.0)-pow(double(10.0),double(2.0)/double(-10.0)),max_prob_N);
+
+	// likeMatch33[i+33]        = log1p(    -pow(10.0,2.0/-10.0) )    /log(10);	    
+        // likeMismatch33[i+33]     = log  (     pow(10.0,2.0/-10.0)/3.0 )/log(10);
+
+	// likeMatchProb33[i+33]    = 1.0-pow(10.0,2.0/-10.0) ;
+        // likeMismatchProb33[i+33] =     pow(10.0,2.0/-10.0)/3.0 ;
+ 
+	// probForQual33[i+33]      = max(double(1.0)-pow(double(10.0),double(2.0)/double(-10.0)),max_prob_N);
+
+	
+	// likeMatch64[i+64]        = log1p(    -pow(10.0,2.0/-10.0) )    /log(10);	    
+        // likeMismatch64[i+64]     = log  (     pow(10.0,2.0/-10.0)/3.0 )/log(10);
+
+	// likeMatchProb64[i+64]    = 1.0-pow(10.0,2.0/-10.0) ;
+        // likeMismatchProb64[i+64] =     pow(10.0,2.0/-10.0)/3.0 ;
+ 
+	// probForQual64[i+64]      = max(double(1.0)-pow(double(10.0),double(2.0)/double(-10.0)),max_prob_N);
 
     }
 
 
     //Computing for quality scores 2 and up
-    for(int i=2;i<64;i++){
-	likeMatch[i]        = log1p(    -pow(10.0,i/-10.0) )     /log(10);	    
-        likeMismatch[i]     = log  (     pow(10.0,i/-10.0)/3.0  )/log(10); //i/(-10.0*1.0);  
+    for(int i=2;i<MAXQCSCORE;i++){
+	likeMatch[i+qualOffset]        = log1p(    -pow(10.0,i/-10.0) )     /log(10);	    
+        likeMismatch[i+qualOffset]     = log  (     pow(10.0,i/-10.0)/3.0  )/log(10); //i/(-10.0*1.0);  
 
+	likeMatchProb[i+qualOffset]           = 1.0-pow(10.0,i/-10.0);
+	likeMismatchProb[i+qualOffset]        =     pow(10.0,i/-10.0)/3.0;
 
-	likeMatchProb[i]           = 1.0-pow(10.0,i/-10.0);
-	likeMismatchProb[i]        =     pow(10.0,i/-10.0)/3.0;
+	probForQual[i+qualOffset] = max(double(1.0)-pow(double(10.0),double(i)/double(-10.0)),max_prob_N);
 
-	probForQual[i] = max(double(1.0)-pow(double(10.0),double(i)/double(-10.0)),
-			     max_prob_N);
+	// likeMatch33[i+33]        = log1p(    -pow(10.0,2.0/-10.0) )    /log(10);	    
+        // likeMismatch33[i+33]     = log  (     pow(10.0,2.0/-10.0)/3.0 )/log(10);
+
+	// likeMatchProb33[i+33]    = 1.0-pow(10.0,2.0/-10.0) ;
+        // likeMismatchProb33[i+33] =     pow(10.0,2.0/-10.0)/3.0 ;
+ 
+	// probForQual33[i+33]      = max(double(1.0)-pow(double(10.0),double(2.0)/double(-10.0)),max_prob_N);
+
+	
+	// likeMatch64[i+64]        = log1p(    -pow(10.0,2.0/-10.0) )    /log(10);	    
+        // likeMismatch64[i+64]     = log  (     pow(10.0,2.0/-10.0)/3.0 )/log(10);
+
+	// likeMatchProb64[i+64]    = 1.0-pow(10.0,2.0/-10.0) ;
+        // likeMismatchProb64[i+64] =     pow(10.0,2.0/-10.0)/3.0 ;
+ 
+	// probForQual64[i+64]      = max(double(1.0)-pow(double(10.0),double(2.0)/double(-10.0)),max_prob_N);
 
 #ifdef DEBUG2
         cout<<endl<<"qual = "<<i<<endl;
-        cout<<"match    " <<likeMatch[i]<<endl;
-        cout<<"mismatch " <<likeMismatch[i]<<endl;
-	cout<<"match    " <<likeMatchProb[i]<<endl;
-        cout<<"mismatch " <<likeMismatchProb[i]<<endl;
+        cout<<"match    " <<likeMatch[i+qualOffset]<<endl;
+        cout<<"mismatch " <<likeMismatch[i+qualOffset]<<endl;
+	cout<<"match    " <<likeMatchProb[i+qualOffset]<<endl;
+        cout<<"mismatch " <<likeMismatchProb[i+qualOffset]<<endl;
 #endif
 
     }
 
     //pre-computing the likelihood for pairs of nucleotides
-    for(int i=0;i<64;i++){
-	for(int j=0;j<64;j++){	    
-	    likeMatchPair[i][j]    = 
+    for(int i=0;i<MAXQCSCORE;i++){
+	for(int j=0;j<MAXQCSCORE;j++){	    
+	    likeMatchPair[i+qualOffset][j+qualOffset]    = 
 		log  ( 
-		      (1.0*   likeMatchProb[i] *    likeMatchProb[j] +     //mm
-		       3.0*likeMismatchProb[i] * likeMismatchProb[j] )     //ww
+		      (1.0*   likeMatchProb[i+qualOffset] *    likeMatchProb[j+qualOffset] +     //mm
+		       3.0*likeMismatchProb[i+qualOffset] * likeMismatchProb[j+qualOffset] )     //ww
 		       )/log(10);
-	    likeMismatchPair[i][j] = 
+	    likeMismatchPair[i+qualOffset][j+qualOffset] = 
 		log  ( 
-		      (1.0*   likeMatchProb[i] * likeMismatchProb[j] +     //mw
-		       1.0*likeMismatchProb[i] *    likeMatchProb[j] +     //wm
-		       2.0*likeMismatchProb[i] * likeMismatchProb[j] )     //ww
+		      (1.0*   likeMatchProb[i+qualOffset] * likeMismatchProb[j+qualOffset] +     //mw
+		       1.0*likeMismatchProb[i+qualOffset] *    likeMatchProb[j+qualOffset] +     //wm
+		       2.0*likeMismatchProb[i+qualOffset] * likeMismatchProb[j+qualOffset] )     //ww
 		       )/log(10);  
 	}
     }
@@ -238,26 +269,26 @@ void MergeTrimReads::initMerge(){
 #ifdef DEBUG2
     cout<<"pair qual match"<<endl;
     cout<<"\t";
-    for(int i=0;i<64;i++)
+    for(int i=0;i<MAXQCSCORE;i++)
 	cout<<i<<"\t";
 
-    for(int i=0;i<64;i++){
+    for(int i=0;i<MAXQCSCORE;i++){
 	cout<<i<<"\t";
-	for(int j=0;j<64;j++){
-	    cout<<pow(10.0,likeMatchPair[i][j])<<"\t";	    
+	for(int j=0;j<MAXQCSCORE;j++){
+	    cout<<pow(10.0,likeMatchPair[i+qualOffset][j+qualOffset])<<"\t";	    
 	}
 	cout<<endl;
     }
 
     cout<<"pair qual mismatch"<<endl;
     cout<<"\t";
-    for(int i=0;i<64;i++)
+    for(int i=0;i<MAXQCSCORE;i++)
 	cout<<i<<"\t";
 
-    for(int i=0;i<64;i++){
+    for(int i=0;i<MAXQCSCORE;i++){
 	cout<<i<<"\t";
-	for(int j=0;j<64;j++){
-	    cout<<pow(10.0,likeMismatchPair[i][j])<<"\t";	    
+	for(int j=0;j<MAXQCSCORE;j++){
+	    cout<<pow(10.0,likeMismatchPair[i+qualOffset][j+qualOffset])<<"\t";	    
 	}
 	cout<<endl;
     }
@@ -306,7 +337,9 @@ void MergeTrimReads::initMerge(){
 		    b2.qual = -1;
 
 		    baseQual RT    = cons_base_probInit(b1,b2);
-		    newprob[base2int(dnaBases[i1])][base2int(dnaBases[i2])][q1][q2] = RT.qual ;
+		    newprob[base2int(dnaBases[i1])][base2int(dnaBases[i2])][qualOffset+q1][qualOffset+q2] = RT.qual ;
+		    // newprob33[base2int(dnaBases[i1])][base2int(dnaBases[i2])][33+q1][33+q2] = RT.qual ;
+		    // newprob64[base2int(dnaBases[i1])][base2int(dnaBases[i2])][64+q1][64+q2] = RT.qual ;
 
 #ifdef  CONSBASEPROB
 		    cerr<<dnaBases[i1]<<"\t"<<dnaBases[i2]<<"\t"<<q1<<"\t"<<q2<<"\t"<<RT.qual<<endl;
@@ -349,13 +382,13 @@ void MergeTrimReads::initMerge(){
   \param  logScores vector of ints of log scores
   \return The string ready to be written as a BAM
 */
-inline string MergeTrimReads::convert_logprob_quality(vector<int> logScores){
-    string toReturn="";
-    for(unsigned int i=0;i<logScores.size();i++){
-	toReturn+=char(max(qualOffset,min(126,logScores[i]+qualOffset)));
-    }
-    return toReturn;
-}
+// inline string MergeTrimReads::convert_logprob_quality(vector<int> logScores){
+//     string toReturn="";
+//     for(unsigned int i=0;i<logScores.size();i++){
+// 	toReturn+=char(max(qualOffset,min(126,logScores[i]+qualOffset)));
+//     }
+//     return toReturn;
+// }
 
 
 
@@ -388,11 +421,11 @@ inline double MergeTrimReads::randomGen(){
 }
 
 
-//! Computes the consensus for two individual bases with their quality scores
+//! Initializes the consensus probabilities for 2 base
 /*!
   
-  Computes a new base and a new quality for two (somewhat)
-  independent observations of a single base
+  Initializes the probabilities for 2 bases
+  called by initMerge()
 
   \param  base1 first base (as baseQual struct)
   \param  base2 second base (as baseQual struct)
@@ -459,7 +492,7 @@ inline baseQual MergeTrimReads::cons_base_probInit(baseQual  base1,baseQual base
 	int hqual = int( floor( min(60.0,-10.0*(thelp-total_prob)) + 0.5) );
        	if( (hqual > toReturn.qual) || ((hqual == toReturn.qual) && (randomGen() >=0.5)) ){
 	    toReturn.base = bases[i];
-	    toReturn.qual = hqual;
+	    toReturn.qual = char(hqual+qualOffset);
 	}
     }
 
@@ -467,7 +500,18 @@ inline baseQual MergeTrimReads::cons_base_probInit(baseQual  base1,baseQual base
 }
 
 
+//! Computes the consensus for two individual bases with their quality scores
+/*!
+  
+  Computes a new base and a new quality for two (somewhat)
+  independent observations of a single base
+  given that cons_base_probInit was called before
 
+  \param  base1 first base (as baseQual struct)
+  \param  base2 second base (as baseQual struct)
+
+  \return consensus base (as baseQual struct)
+*/
 inline baseQual MergeTrimReads::cons_base_prob(baseQual  base1,baseQual base2){
    
     baseQual toReturn;
@@ -498,7 +542,6 @@ inline baseQual MergeTrimReads::cons_base_prob(baseQual  base1,baseQual base2){
 	    }
 	}
     }
-
 
 
     return toReturn;
@@ -665,7 +708,7 @@ void MergeTrimReads::set_options(int trimcutoff_,bool allowMissing_,  bool ancie
   \return The likelihood of the observation 
 */
 inline double MergeTrimReads::detectChimera(const string      & read,
-					    const vector<int> & qual,
+					    const string      & qual,
 					    const string      & chimeraString,
 					    unsigned int        offsetChimera){
 
@@ -726,9 +769,9 @@ inline double MergeTrimReads::detectChimera(const string      & read,
   \return The likelihood of observing an overlap between two sequences
 */
 inline double MergeTrimReads::measureOverlap(const string      & read1,
-					     const vector<int> & qual1,
+					     const string      & qual1,
 					     const string      & read2,
-					     const vector<int> & qual2,
+					     const string      & qual2,
 					     const int         & maxLengthForPair,
 					     unsigned int      offsetRead,				    
 					     //double *          iterations =0 ,
@@ -861,7 +904,7 @@ inline double MergeTrimReads::measureOverlap(const string      & read1,
   \return The likelihood of the observation 
 */
 inline double MergeTrimReads::detectAdapter(const string      & read,
-					    const vector<int> & qual,
+					    const string      & qual,
 					    const string      & adapterString,
 					    unsigned int        offsetRead,
 					    int              *  matches){
@@ -1126,7 +1169,7 @@ inline bool MergeTrimReads::checkKeyPairedEnd(string & read1,
   \return true if the key was not observed, false otherwise
 */
 inline bool MergeTrimReads::checkChimera(const string & read1,
-					 const vector<int> & qualv1,
+					 const string & qualv1,
 					 merged & toReturn, 
 					 const double & logLikelihoodTotal){
 
@@ -1165,17 +1208,17 @@ inline bool MergeTrimReads::checkChimera(const string & read1,
   \param qual  The string of quality scores (input)
   \param qualv The vector of quality scores as integers (output)
 */
-inline void MergeTrimReads::string2NumericalQualScores(const string & qual,vector<int> & qualv){
+// inline void MergeTrimReads::string2NumericalQualScores(const string & qual,vector<int> & qualv){
 
-    for(unsigned int i=0;i<qual.length();i++){
-	//this nonsense is to make old compilers happy
-	int t2  = int(char( qual[i] ))-qualOffset;
-	int t = max( t2,2);
-	//qualv.push_back( t  );
-	qualv[i] =t;
-    }
+//     for(unsigned int i=0;i<qual.length();i++){
+// 	//this nonsense is to make old compilers happy
+// 	int t2  = int(char( qual[i] ))-qualOffset;
+// 	int t = max( t2,2);
+// 	//qualv.push_back( t  );
+// 	qualv[i] =t;
+//     }
     
-}
+// }
 
 
 
@@ -1212,7 +1255,7 @@ inline void MergeTrimReads::string2NumericalQualScores(const string & qual,vecto
 
 */
 inline void MergeTrimReads::computeBestLikelihoodSingle(const string      & read1,
-							const vector<int> & qualv1,
+							const string      & qualv1,
 							double & logLikelihoodTotal,
 							int    & logLikelihoodTotalIdx,
 							double & sndlogLikelihoodTotal,
@@ -1317,14 +1360,14 @@ inline void MergeTrimReads::computeBestLikelihoodSingle(const string      & read
 
 */
 
-inline void MergeTrimReads::computeBestLikelihoodPairedEnd(const string &      read1,
-							   const vector<int> & qualv1,
+inline void MergeTrimReads::computeBestLikelihoodPairedEnd(const string & read1,
+							   const string & qualv1,
 
-							   const string &      read2,
-							   const vector<int> & qualv2,
+							   const string & read2,
+							   const string & qualv2,
 
-							   const string &      read2_rev,
-							   const vector<int> & qualv2_rev,
+							   const string & read2_rev,
+							   const string & qualv2_rev,
 
 							   const int & lengthRead1,
 							   const int & lengthRead2,
@@ -1433,10 +1476,10 @@ inline void MergeTrimReads::computeBestLikelihoodPairedEnd(const string &      r
 */
 
 inline void MergeTrimReads::computeConsensusPairedEnd( const string & read1,
-						       const vector<int> &   qualv1,
+						       const string & qualv1,
 							      
 						       const string & read2_rev,
-						       const vector<int> & qualv2_rev,
+						       const string & qualv2_rev,
 
 							      
 						       const double & logLikelihoodTotal,
@@ -1463,7 +1506,7 @@ inline void MergeTrimReads::computeConsensusPairedEnd( const string & read1,
 	int i2=int(read2_rev.size())-int(logLikelihoodTotalIdx);
 
 	string        newSeq  = "";
-	vector<int>   newQual ;
+	string        newQual = "" ;
 
 	for(int i=0;i<int(logLikelihoodTotalIdx);i++){
 
@@ -1483,7 +1526,8 @@ inline void MergeTrimReads::computeConsensusPairedEnd( const string & read1,
 
 		baseQual RT    = cons_base_prob(b1,b2);
 		newSeq         +=  RT.base ;
-		newQual.push_back( RT.qual );
+		//newQual.push_back( RT.qual );
+		newQual += char(RT.qual);
 
 #ifdef CONSENSUSCALL
 		cout<<newSeq.size()<<"\t"<<RT.base<<"\t"<<RT.qual<<endl;
@@ -1525,8 +1569,9 @@ inline void MergeTrimReads::computeConsensusPairedEnd( const string & read1,
 
 
 	toReturn.code    =' ';
+	//TODO eliminate the copy
 	toReturn.sequence=newSeq;	   
-	toReturn.quality =convert_logprob_quality(newQual);	
+	toReturn.quality =newQual;	
 
 	// cout<<toReturn.sequence<<endl;
 	//return toReturn;
@@ -1577,8 +1622,8 @@ merged MergeTrimReads::process_SR(string  read1,
 
 
     
-    vector<int> qualv1 (qual1.size(),2);
-    string2NumericalQualScores(qual1,qualv1);
+    // vector<int> qualv1 (qual1.size(),2);
+    // string2NumericalQualScores(qual1,qualv1);
     
 
     //start detecting chimera //
@@ -1587,7 +1632,8 @@ merged MergeTrimReads::process_SR(string  read1,
 
 
     if(checkChimera(read1,
-		    qualv1,
+		    //qualv1,
+		    qual1,
 		    toReturn, 
 		    logLikelihoodTotal)){
 	return toReturn;	
@@ -1614,7 +1660,8 @@ merged MergeTrimReads::process_SR(string  read1,
     // cerr<<"read1 3 "<<read1<<endl;
 
     computeBestLikelihoodSingle(read1,
-				qualv1,
+				//qualv1,
+				qual1,
 				logLikelihoodTotal,
 				logLikelihoodTotalIdx,
 				sndlogLikelihoodTotal,
@@ -1700,11 +1747,11 @@ merged MergeTrimReads::process_PE( string  read1,  string  qual1,
     }
 
 
-    vector<int> qualv1  (qual1.size(),2);
-    vector<int> qualv2  (qual2.size(),2);
+    // vector<int> qualv1  (qual1.size(),2);
+    // vector<int> qualv2  (qual2.size(),2);
 
-    string2NumericalQualScores(qual1,qualv1);
-    string2NumericalQualScores(qual2,qualv2);
+    // string2NumericalQualScores(qual1,qualv1);
+    // string2NumericalQualScores(qual2,qualv2);
 
 
 
@@ -1729,7 +1776,7 @@ merged MergeTrimReads::process_PE( string  read1,  string  qual1,
 
 
     if(checkChimera(read1,
-		    qualv1,
+		    qual1,
 		    toReturn, 
 		    logLikeFirstRead)){ //we just look at the first read hence we need to only use the likelihood of the first read
 	return toReturn;	
@@ -1746,10 +1793,10 @@ merged MergeTrimReads::process_PE( string  read1,  string  qual1,
     reverse(qual2_rev.begin(), 
 	    qual2_rev.end());
     
-    vector<int> qualv2_rev (qualv2);
+    // vector<int> qualv2_rev (qualv2);
 
-    reverse(qualv2_rev.begin(), 
-	    qualv2_rev.end());
+    // reverse(qualv2_rev.begin(), 
+    // 	    qualv2_rev.end());
 
    
 
@@ -1792,13 +1839,13 @@ merged MergeTrimReads::process_PE( string  read1,  string  qual1,
     
     
     computeBestLikelihoodPairedEnd(read1,
-				   qualv1,
+				   qual1,
 
 				   read2,
-				   qualv2,
+				   qual2,
 
 				   read2_rev,
-				   qualv2_rev,
+				   qual2_rev,
 				   
 				   lengthRead1,
 				   lengthRead2,
@@ -1823,10 +1870,10 @@ merged MergeTrimReads::process_PE( string  read1,  string  qual1,
 
     
     computeConsensusPairedEnd( read1,
-			       qualv1,
+			       qual1,
 
 			       read2_rev,
-			       qualv2_rev,
+			       qual2_rev,
 
 
 			       logLikelihoodTotal,
@@ -2091,7 +2138,7 @@ void MergeTrimReads::bamAlgnToString( BamAlignment & al ,
   \return Maximum-likelihood consensus as a string
 */
 
-string MergeTrimReads::mlConsensus(vector<string> & adapterSeqs, vector< vector<int>  > & qualadaptSeq,const float threshold){
+string MergeTrimReads::mlConsensus(vector<string> & adapterSeqs, vector< string  > & qualadaptSeq,const float threshold){
     const string dnaAlphabet  = "ACGT";
     string adapter="";
     double thresLog = log( 1-threshold )/log(10);
@@ -2176,7 +2223,7 @@ string MergeTrimReads::mlConsensus(vector<string> & adapterSeqs, vector< vector<
   \return True if the pair was merged and is contained within al only
 */
 
-void MergeTrimReads::inferadaptPairBAM( BamAlignment & al, BamAlignment & al2, vector<string> & adapterSeqs_fwd, vector< vector<int>  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< vector<int>  > & qualadaptSeq_rev){
+void MergeTrimReads::inferadaptPairBAM( BamAlignment & al, BamAlignment & al2, vector<string> & adapterSeqs_fwd, vector< string  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< string > & qualadaptSeq_rev){
 
     string read1;
     string read2;
@@ -2194,7 +2241,7 @@ void MergeTrimReads::inferadaptPairBAM( BamAlignment & al, BamAlignment & al2, v
     inferadaptPair( read1, read2, qual1,qual2,adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
 }
 
-void MergeTrimReads::inferadaptPairFQ(  fqrecord & fr,vector<string> & adapterSeqs_fwd, vector< vector<int>  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< vector<int>  > & qualadaptSeq_rev){
+void MergeTrimReads::inferadaptPairFQ(  fqrecord & fr,vector<string> & adapterSeqs_fwd, vector< string > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< string  > & qualadaptSeq_rev){
 
     
     inferadaptPair( fr.s1,fr.s2,
@@ -2204,7 +2251,7 @@ void MergeTrimReads::inferadaptPairFQ(  fqrecord & fr,vector<string> & adapterSe
 
 
 
-void  MergeTrimReads::inferadaptPair(   string & read1,string & read2,string & qual1,string & qual2,vector<string> & adapterSeqs_fwd, vector< vector<int>  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< vector<int>  > & qualadaptSeq_rev){
+void  MergeTrimReads::inferadaptPair(   string & read1,string & read2,string & qual1,string & qual2,vector<string> & adapterSeqs_fwd, vector< string  > & qualadaptSeq_fwd, vector<string> & adapterSeqs_rev, vector< string  > & qualadaptSeq_rev){
 
 #ifdef INFERADAPTPAIR
     cerr<<read1<<" "<<qual1<<endl;
@@ -2216,11 +2263,11 @@ void  MergeTrimReads::inferadaptPair(   string & read1,string & read2,string & q
     sanityCheckLength(read2,qual2);
 
     
-    vector<int> qualv1  (qual1.size(),2);
-    vector<int> qualv2  (qual2.size(),2);
+    // vector<int> qualv1  (qual1.size(),2);
+    // vector<int> qualv2  (qual2.size(),2);
 
-    string2NumericalQualScores(qual1,qualv1);
-    string2NumericalQualScores(qual2,qualv2);
+    // string2NumericalQualScores(qual1,qualv1);
+    // string2NumericalQualScores(qual2,qualv2);
 
     int lengthRead1 = int(read1.size());
     int lengthRead2 = int(read2.size());
@@ -2239,10 +2286,10 @@ void  MergeTrimReads::inferadaptPair(   string & read1,string & read2,string & q
     reverse(qual2_rev.begin(), 
 	    qual2_rev.end());
     
-    vector<int> qualv2_rev (qualv2);
+    // vector<int> qualv2_rev (qualv2);
 
-    reverse(qualv2_rev.begin(), 
-	    qualv2_rev.end());
+    // reverse(qualv2_rev.begin(), 
+    // 	    qualv2_rev.end());
 
     int maxLengthForPair=max(lengthRead1,lengthRead2);
     //second best hit
@@ -2289,9 +2336,9 @@ void  MergeTrimReads::inferadaptPair(   string & read1,string & read2,string & q
 	
 	//overlap
 	logLike  +=	 measureOverlap(   read1      ,
-					   qualv1     ,
+					   qual1     ,
 					   read2_rev  ,
-					   qualv2_rev ,  
+					   qual2_rev ,  
 					   maxLengthForPair,					      
 					   indexAdapter,
 					   &matches);
@@ -2340,7 +2387,7 @@ void  MergeTrimReads::inferadaptPair(   string & read1,string & read2,string & q
 	    cerr<<string(logLikelihoodTotalIdx,' ')<<read1.substr(    logLikelihoodTotalIdx,read1.size()    )<<endl;
 #endif	    
 	    adapterSeqs_fwd.push_back( read1.substr(    logLikelihoodTotalIdx,read1.size()    ));
-	    qualadaptSeq_fwd.push_back(  vector<int>(qualv1.begin() + logLikelihoodTotalIdx, qualv1.end()) );
+	    qualadaptSeq_fwd.push_back(  string(qual1.begin() + logLikelihoodTotalIdx, qual1.end()) );
 	}
 
 	if(logLikelihoodTotalIdx<int(read2.size())){
@@ -2349,7 +2396,7 @@ void  MergeTrimReads::inferadaptPair(   string & read1,string & read2,string & q
 	    cerr<<string(logLikelihoodTotalIdx,' ' )<<read2.substr(logLikelihoodTotalIdx,read2.size())<<endl;
 #endif
 	    adapterSeqs_rev.push_back(   read2.substr(logLikelihoodTotalIdx,read2.size()));
-	    qualadaptSeq_rev.push_back(  vector<int>(qualv2.begin() + logLikelihoodTotalIdx, qualv2.end()) );
+	    qualadaptSeq_rev.push_back(  string(qual2.begin() + logLikelihoodTotalIdx, qual2.end()) );
 	}
     }
 	

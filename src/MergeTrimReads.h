@@ -118,22 +118,40 @@ class MergeTrimReads{
 
 
     //likelihood variables
-    double likeMatch[64];
-    double likeMismatch[64];
-    double likeMatchProb[64];
-    double likeMismatchProb[64];
-    
-    double likeMatchPair[64][64];
-    double likeMismatchPair[64][64];
+    //the quality offset is either 33 or 64
+    double likeMatch[64+MAXQCSCORE];
+    double likeMismatch[64+MAXQCSCORE];
+    double likeMatchProb[64+MAXQCSCORE];
+    double likeMismatchProb[64+MAXQCSCORE];
 
-    double probForQual[64];
+    /* double likeMatch33[33+64]; */
+    /* double likeMismatch33[33+64]; */
+    /* double likeMatchProb33[33+64]; */
+    /* double likeMismatchProb33[33+64]; */
+
+    /* double likeMatch64[64+64]; */
+    /* double likeMismatch64[64+64]; */
+    /* double likeMatchProb64[64+64]; */
+    /* double likeMismatchProb64[64+64]; */
+
+    double likeMatchPair[64+MAXQCSCORE][64+MAXQCSCORE];
+    double likeMismatchPair[64+MAXQCSCORE][64+MAXQCSCORE];
+    /* double likeMatchPair33[33+64][33+64]; */
+    /* double likeMismatchPair33[33+64][33+64]; */
+    /* double likeMatchPair64[64+64][64+64]; */
+    /* double likeMismatchPair64[64+64][64+64]; */
+
+    double probForQual[64+MAXQCSCORE];
+    /* double probForQual33[33+64]; */
+    /* double probForQual64[64+64]; */
+    
     double likeRandomMatch;    // 1/4
     double likeRandomMisMatch; // 3/4
     double likeRandomMatchProb;    // 1/4
     double likeRandomMisMatchProb; // 3/4
 
-    double newprob[5][5][MAXQCSCORE][MAXQCSCORE];
-
+    double newprob[5][5][64+MAXQCSCORE][64+MAXQCSCORE];
+    
 
     //prior dist
     long double pdfDist[MAXLENGTHSEQUENCE];    
@@ -144,7 +162,7 @@ class MergeTrimReads{
     //FUNCTIONS
     string returnFirstToken(string * toparse,string delim);
     char revComp(char c);
-    inline string convert_logprob_quality(vector<int> logScores);
+    //inline string convert_logprob_quality(vector<int> logScores);
     inline double randomGen();
     inline baseQual cons_base_prob(baseQual  base1,baseQual base2);
     inline baseQual cons_base_probInit(baseQual  base1,baseQual base2);
@@ -165,19 +183,20 @@ class MergeTrimReads{
 
     void initMerge();
     double detectChimera(const string      & read,
-			 const vector<int> & qual,
+			 //const vector<int> & qual,
+			 const string      & qual,
 			 const string      & chimeraString,
 			 unsigned int        offsetChimera=0);
     double measureOverlap(const string      & read1,
-			  const vector<int> & qual1,
+			  const string      & qual1,
 			  const string      & read2,
-			  const vector<int> & qual2,
+			  const string      & qual2,
 			  const int         & maxLengthForPair,
 			  unsigned int      offsetRead=0,				    
 			  //double *          iterations =0 ,
 			  int  *            matches=0);
     double detectAdapter(const string      & read,
-			 const vector<int> & qual,
+			 const string      & qual,
 			 const string      & adapterString,
 			 unsigned int        offsetRead=0,
 			 int              *  matches=0);
@@ -193,25 +212,25 @@ class MergeTrimReads{
 			   string & read2,string & qual2,
 			   merged & toReturn);
     bool checkChimera(const string & read1,
-		      const vector<int> & qualv1,
+		      const string & qualv1,
 		      merged & toReturn, 
 		      const double & logLikelihoodTotal);
-    void string2NumericalQualScores(const string & qual,vector<int> & qualv);
+    //void string2NumericalQualScores(const string & qual,vector<int> & qualv);
     void computeBestLikelihoodSingle(const string      & read1,
-				     const vector<int> & qualv1,
+				     const string      & qualv1,
 				     double & logLikelihoodTotal,
 				     int &    logLikelihoodTotalIdx,
 				     double & sndlogLikelihoodTotal,
 				     int &    sndlogLikelihoodTotalIdx);
 
     void computeBestLikelihoodPairedEnd(const string &      read1,
-					const vector<int> & qualv1,
+					const string &      qualv1,
 					    
 					const string &      read2,
-					const vector<int> & qualv2,
+					const string &      qualv2,
 					    
 					const string &      read2_rev,
-					const vector<int> & qualv2_rev,
+					const string &      qualv2_rev,
 					    
 					const int & lengthRead1,
 					const int & lengthRead2,
@@ -227,10 +246,10 @@ class MergeTrimReads{
 
 
     void computeConsensusPairedEnd( const string & read1,
-				    const vector<int> &   qualv1,
+				    const string & qualv1,
 					
 				    const string & read2_rev,
-				    const vector<int> & qualv2_rev,
+				    const string & qualv2_rev,
 					
 							      
 				    const double & logLikelihoodTotal,
@@ -275,7 +294,7 @@ class MergeTrimReads{
 			  string & read2,
 			  string & qual1,
 			  string & qual2);
-    void inferadaptPair(   string & read1,string & read2,string & qual1,string & qual2,vector<string> & adapterSeqs_fwd, vector< vector<int>  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< vector<int>  > & qualadaptSeq_rev);
+    void inferadaptPair(   string & read1,string & read2,string & qual1,string & qual2,vector<string> & adapterSeqs_fwd, vector< string > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< string  > & qualadaptSeq_rev);
 
  public:
     MergeTrimReads (const string& forward_, const string& reverse_, const string& chimera_,
@@ -294,10 +313,10 @@ class MergeTrimReads{
 		    
     /* pair<BamAlignment,BamAlignment> processPair(const BamAlignment & al,const BamAlignment & al2); */
     /* BamAlignment                    processSingle(const BamAlignment & al); */
-    string mlConsensus(vector<string> & adapterSeqs, vector< vector<int>  > & qualadaptSeq,const float threshold=0.99);
-    void inferadaptPairFQ(fqrecord & fr, vector<string> & adapterSeqs_fwd, vector< vector<int>  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< vector<int>  > & qualadaptSeq_rev);
+    string mlConsensus(vector<string> & adapterSeqs, vector< string  > & qualadaptSeq,const float threshold=0.99);
+    void inferadaptPairFQ(fqrecord & fr, vector<string> & adapterSeqs_fwd, vector< string  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< string > & qualadaptSeq_rev);
 
-    void inferadaptPairBAM(   BamAlignment & al , BamAlignment & al2,vector<string> & adapterSeqs_fwd, vector< vector<int>  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< vector<int>  > & qualadaptSeq_rev);
+    void inferadaptPairBAM(   BamAlignment & al , BamAlignment & al2,vector<string> & adapterSeqs_fwd, vector< string  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< string  > & qualadaptSeq_rev);
     bool processPair(   BamAlignment & al , BamAlignment & al2);
     void processSingle( BamAlignment & al );
 
