@@ -4,7 +4,7 @@
 
 
 CXX      = g++   #-g -pg
-CXXFLAGS+= -O3 -Wall -I../bamtools/include/ -I../bamtools/src/ -I../libgab -I../libgab/gzstream/  
+CXXFLAGS+= -O3 -Wall -Wno-char-subscripts -I../bamtools/include/ -I../bamtools/src/ -I../libgab -I../libgab/gzstream/  
 LDFLAGS  = -lm -lz  -lpthread 
 LDLIBS+=  ../bamtools/build/src/utils/CMakeFiles/BamTools-utils.dir/*cpp.o ../bamtools/build/src/api/libbamtools.a ../libgab/utils.o 
 

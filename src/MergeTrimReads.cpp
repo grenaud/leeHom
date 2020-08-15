@@ -329,15 +329,16 @@ void MergeTrimReads::initMerge(){
 		    baseQual b2;
 
 		    b1.base = dnaBases[i1];
-		    b1.prob = probForQual[ q1 ];
+		    b1.prob = probForQual[ q1+qualOffset ];
 		    b1.qual = -1;
 
 		    b2.base = dnaBases[i2];
-		    b2.prob = probForQual[ q2 ]; 
+		    b2.prob = probForQual[ q2+qualOffset ]; 
 		    b2.qual = -1;
 
 		    baseQual RT    = cons_base_probInit(b1,b2);
 		    newprob[base2int(dnaBases[i1])][base2int(dnaBases[i2])][qualOffset+q1][qualOffset+q2] = RT.qual ;
+		    //cerr<<"c "<<base2int(dnaBases[i1])<<" "<<base2int(dnaBases[i2])<<" q1: "<<(qualOffset+q1)<<" "<<(q1)<<" "<<(b1.prob)<<" q2: "<<(qualOffset+q2)<<" "<<(q2)<<" "<<(b2.prob)<<" res: "<<RT.base<<" "<<RT.qual<<endl;
 		    // newprob33[base2int(dnaBases[i1])][base2int(dnaBases[i2])][33+q1][33+q2] = RT.qual ;
 		    // newprob64[base2int(dnaBases[i1])][base2int(dnaBases[i2])][64+q1][64+q2] = RT.qual ;
 
@@ -522,11 +523,13 @@ inline baseQual MergeTrimReads::cons_base_prob(baseQual  base1,baseQual base2){
     if(base1.base == base2.base){
 
 	toReturn.base = base1.base;	
+
 	toReturn.qual = newprob[base2int(base1.base)][base2int(base2.base)][base1.qual][base2.qual];
-	
+	//cerr<<"b1q"<<base2int(base1.base)<<" "<<base1.qual<<"\tb2q"<<base2int(base2.base)<<" "<<base2.qual<<" "<<toReturn.base<<" "<<toReturn.qual<<endl;	
     }else{
-	
+
 	toReturn.qual = newprob[base2int(base1.base)][base2int(base2.base)][base1.qual][base2.qual];
+	
 	if(base1.qual > base2.qual){
 	    toReturn.base = base1.base;
 	}else{
@@ -541,6 +544,7 @@ inline baseQual MergeTrimReads::cons_base_prob(baseQual  base1,baseQual base2){
 		}
 	    }
 	}
+	//cerr<<"b1q"<<base2int(base1.base)<<" "<<base1.qual<<"\tb2q"<<base2int(base2.base)<<" "<<base2.qual<<" "<<toReturn.base<<" "<<toReturn.qual<<endl;
     }
 
 
