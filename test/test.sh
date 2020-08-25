@@ -34,6 +34,18 @@ else
     exit 1
 fi
 
+zcat zcat out.fq.gz |head -n 60 |md5sum > fq.head60out.md5sum
+
+echo -n "testing output md5sum:"
+if diff fq.head60out.md5sum fq.head60out.md5sum_ > /dev/null
+then
+    echo -e " ${GREEN}test passed${NC}"
+else
+    echo -e " ${RED}test failed${NC}"
+    exit 1
+fi
+
+
 echo -n "Running ancient DNA mode:"
 ../src/leeHom --ancientdna -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG   -o out.bam ../testData/rawAncientDNA.bam |& md5sum > bamanc.md5sum
 echo -e " ${GREEN}ok${NC}"
