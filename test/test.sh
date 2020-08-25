@@ -34,7 +34,7 @@ else
     exit 1
 fi
 
-zcat zcat out.fq.gz |head -n 60 |md5sum > fq.head60out.md5sum
+zcat out.fq.gz |head -n 60 |md5sum > fq.head60out.md5sum
 
 echo -n "testing output md5sum:"
 if diff fq.head60out.md5sum fq.head60out.md5sum_ > /dev/null
