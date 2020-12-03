@@ -6,11 +6,11 @@
 CXX      = g++   #-g -pg
 CXXFLAGS+= -O3 -Wall -Wno-char-subscripts -I../bamtools/include/ -I../bamtools/src/ -I../libgab -I../libgab/gzstream/  
 LDFLAGS  = -lm -lz  -lpthread 
-LDLIBS+=  ../bamtools/build/src/utils/CMakeFiles/BamTools-utils.dir/*cpp.o ../bamtools/build/src/api/libbamtools.a ../libgab/utils.o 
+LDLIBS+=  ../bamtools/build/src/utils/CMakeFiles/BamTools-utils.dir/*cpp.o ../bamtools/build/src/api/libbamtools.a ../libgab/libgab.a
 
 
 
-all:    ../bamtools/build/src/api/libbamtools.a ../libgab/utils.o MergeTrimReads.o leeHom
+all:    ../bamtools/build/src/api/libbamtools.a ../libgab/libgab.a MergeTrimReads.o leeHom
 
 %.o: %.cpp
 	${CXX} -c ${CXXFLAGS} $^ 
@@ -18,11 +18,11 @@ all:    ../bamtools/build/src/api/libbamtools.a ../libgab/utils.o MergeTrimReads
 leeHom: leeHom.o  MergeTrimReads.o ../libgab/PutProgramInHeader.o  ../libgab/FastQObj.o  ../libgab/FastQParser.o ../libgab/gzstream/libgzstream.a
 	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS) 
 
-../libgab/utils.h:
+../libgab/libgab.h:
 	rm -rf libgab/
 	git clone --recursive https://github.com/grenaud/libgab.git ../libgab/
 
-../libgab/utils.o: ../bamtools/build/src/api/libbamtools.a  ../libgab/utils.h
+../libgab/libgab.o: ../bamtools/build/src/api/libbamtools.a  ../libgab/libgab.h
 	make -C ../libgab
 
 ../bamtools/src/api/BamAlignment.h:

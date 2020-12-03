@@ -19,7 +19,7 @@
 #include <api/BamAux.h>
 /* #include <boost/math/distributions/lognormal.hpp> */
 
-#include "utils.h"
+#include "libgab.h"
 
 using namespace std;
 using namespace BamTools;

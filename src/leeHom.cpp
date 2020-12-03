@@ -12,7 +12,7 @@
 #include "PutProgramInHeader.h"
 #include "FastQParser.h"
 
-#include "utils.h"
+#include "libgab.h"
 
 //TODO char qualscore to like
 
