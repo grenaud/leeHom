@@ -22,7 +22,7 @@ leeHom: leeHom.o  MergeTrimReads.o ../libgab/PutProgramInHeader.o  ../libgab/Fas
 	rm -rf libgab/
 	git clone --recursive https://github.com/grenaud/libgab.git ../libgab/
 
-../libgab/libgab.o: ../bamtools/build/src/api/libbamtools.a  ../libgab/libgab.h
+../libgab/libgab.a: ../bamtools/build/src/api/libbamtools.a  ../libgab/libgab.h
 	make -C ../libgab
 
 ../bamtools/src/api/BamAlignment.h:
