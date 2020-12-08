@@ -21,7 +21,7 @@ else
 fi
 
 
-echo -n "Running on fastq format:"
+echo -n "Running on paired-end fastq format:"
 ../src/leeHom  -fqo out -fq1 ../testData/rawAncientDNA.f1.gz -fq2 ../testData/rawAncientDNA.f2.gz |& md5sum > fq.md5sum
 echo -e " ${GREEN}ok${NC}"
 
@@ -33,7 +33,6 @@ else
     echo -e " ${RED}test failed${NC}"
     exit 1
 fi
-
 zcat out.fq.gz |head -n 60 |md5sum > fq.head60out.md5sum
 
 echo -n "testing output md5sum:"
@@ -44,6 +43,34 @@ else
     echo -e " ${RED}test failed${NC}"
     exit 1
 fi
+
+
+
+
+echo -n "Running on single-end fastq format:"
+../src/leeHom  -fqo out_s -fq1 ../testData/rawAncientDNA.f1.gz |& md5sum > fq_s.md5sum
+echo -e " ${GREEN}ok${NC}"
+
+echo -n "testing md5sum:"
+if diff fq_s.md5sum fq_s.md5sum_ > /dev/null
+then
+    echo -e " ${GREEN}test passed${NC}"
+else
+    echo -e " ${RED}test failed${NC}"
+    exit 1
+fi
+zcat out_s.fq.gz |head -n 60 |md5sum > fq_s.head60out.md5sum
+
+echo -n "testing output md5sum:"
+if diff fq_s.head60out.md5sum fq_s.head60out.md5sum_ > /dev/null
+then
+    echo -e " ${GREEN}test passed${NC}"
+else
+    echo -e " ${RED}test failed${NC}"
+    exit 1
+fi
+
+
 
 
 echo -n "Running ancient DNA mode:"
