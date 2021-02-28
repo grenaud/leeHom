@@ -43,14 +43,12 @@ CXXFLAGS+= -O3 -Wall -Wno-char-subscripts -I${BAMTOOLSINCAPI} -I${BAMTOOLSINCSHA
 LDFLAGS  = -lm -lz  -lpthread 
 LDLIBS+=  ${BAMTOOLSLIBOBJ} ${LIBGABLIBOBJ}
 
-
-
 all:    ${BAMTOOLSLIBOBJ} ${LIBGABLIBOBJ} MergeTrimReads.o leeHom
 
 %.o: %.cpp
 	${CXX} -c ${CXXFLAGS} $^ 
 
-leeHom: leeHom.o  MergeTrimReads.o ../libgab/PutProgramInHeader.o   ../libgab/gzstream/libgzstream.a
+leeHom: leeHom.o  MergeTrimReads.o ../libgab/libgabbamtools.a ../libgab/gzstream/libgzstream.a
 	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS) 
 
 ${LIBGABINC}/libgab.h:
