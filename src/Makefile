@@ -41,7 +41,7 @@ print-%: ; @echo $*=$($*)
 
 #CXX      = ${CXX}#g++   #-g -pg
 CXXFLAGS+= -O3 -Wall -Wno-char-subscripts -I${BAMTOOLSINCAPI} -I${BAMTOOLSINCSHARED}  -I${LIBGABINC} -I${LIBGABINC}/gzstream/  
-LDFLAGS  = -lm -lz  -lpthread
+LDFLAGS  = -lm -lpthread -lz
 
 LDLIBS+=  ${BAMTOOLSLIBOBJ} ${LIBGABLIBOBJ} ${LIBGABLIB}/libgabbamtools.a  ${LIBGABLIB}/gzstream/libgzstream.a
 
