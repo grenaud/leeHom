@@ -51,6 +51,10 @@ all:    ${BAMTOOLSLIBOBJ} ${LIBGABLIBOBJ} MergeTrimReads.o leeHom
 	${CXX} -c ${CXXFLAGS} $^ 
 
 leeHom: leeHom.o  MergeTrimReads.o ${LIBGABLIBOBJ}
+	@echo "linking"
+	@echo ${LDLIBS}
+	@echo ${LDFLAGS}
+
 	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS) 
 
 ${LIBGABINC}/libgab.h:
@@ -64,7 +68,6 @@ ${LIBGABLIBOBJ}: ${BAMTOOLSLIBOBJ}  ${LIBGABINC}/libgab.h
 ${BAMTOOLSINCAPI}/api/BamAlignment.h:
 	@echo ${BAMTOOLSINCAPI}/api/BamAlignment.h
 	@echo ${BAMTOOLSLIBOBJ}
-	exit
 	rm -rf ../bamtools/
 	mkdir ../bamtools/
 	git clone --recursive https://github.com/pezmaster31/bamtools.git ../bamtools/ && cd ../bamtools/ && git reset --hard d24d850de17134fe4e7984b26493c5c0a1844b35
