@@ -41,7 +41,7 @@ print-%: ; @echo $*=$($*)
 
 #CXX      = ${CXX}#g++   #-g -pg
 CXXFLAGS+= -O3 -Wall -Wno-char-subscripts -I${BAMTOOLSINCAPI} -I${BAMTOOLSINCSHARED}  -I${LIBGABINC} -I${LIBGABINC}/gzstream/  
-LDFLAGS  = -lm -lpthread -lz
+LDFLAGS += -lm -lpthread -lz
 
 LDLIBS+=  ${BAMTOOLSLIBOBJ} ${LIBGABLIBOBJ} ${LIBGABLIB}/libgabbamtools.a  ${LIBGABLIB}/gzstream/libgzstream.a
 
@@ -50,7 +50,7 @@ all:    ${BAMTOOLSLIBOBJ} ${LIBGABLIBOBJ} MergeTrimReads.o leeHom
 %.o: %.cpp
 	${CXX} -c ${CXXFLAGS} $^ 
 
-leeHom: leeHom.o  MergeTrimReads.o ${LIBGABLIBOBJ} 
+leeHom: leeHom.o  MergeTrimReads.o ${LIBGABLIBOBJ}
 	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS) 
 
 ${LIBGABINC}/libgab.h:

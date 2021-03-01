@@ -4,6 +4,13 @@ LIBGAB= $(realpath  libgab/)
 
 PASSVARIABLES=
 
+ifdef CFLAGS
+	PASSVARIABLES+= CFLAGS="${CFLAGS}" 
+endif
+
+ifdef LDFLAGS
+	PASSVARIABLES+= LDFLAGS="${LDFLAGS}" 
+endif
 
 ifdef BAMTOOLSINC
 	PASSVARIABLES+= BAMTOOLSINC="${BAMTOOLSINC}" 
@@ -20,6 +27,7 @@ endif
 ifdef LIBGABLIB
 	PASSVARIABLES+= LIBGABLIB="${LIBGABLIB}" 
 endif
+
 
 ifeq ($(CXX),)
 CXX := g++ #-g  -pg 
