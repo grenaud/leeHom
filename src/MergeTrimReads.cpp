@@ -656,8 +656,9 @@ string MergeTrimReads::returnFirstToken(string * toparse,string delim){
 void MergeTrimReads::set_keys(const string& key1, const string& key2){
 
     keys0=key1;
+
     if(key2==""){
-	keys1=key1;
+    	keys1=key1;     //if there is a single key, it is copied, do not remember why
     }else{
 	keys1=key2;
     }
@@ -1074,7 +1075,7 @@ inline bool MergeTrimReads::checkKeySingleEnd(string & read1,string & qual1,merg
 	    (options_allowMissing && (edits(read1.substr(0,len_key1),keys0) == 1))  //1mm in first key	     
 	    ){ //1mm in second key
 	    read1 = read1.substr(len_key1,read1.size()-len_key1);
-	    qual1 = qual1.substr(len_key1,read1.size()-len_key1);
+	    qual1 = qual1.substr(len_key1,qual1.size()-len_key1);
 	}else{
 	    if(options_allowMissing && 
 	       (read1.substr(0,len_key1-1) == keys0.substr(1,len_key1-1))  ){
@@ -1115,17 +1116,19 @@ inline bool MergeTrimReads::checkKeyPairedEnd(string & read1,
 
 
     if( handle_key && read1.length() > 0){
+	// cerr<<keys0<<" "<<read1.substr(0,len_key1)<<" "<<edits(read1.substr(0,len_key1),keys0)<<endl;
+	// cerr<<keys1<<" "<<read2.substr(0,len_key2)<<" "<<edits(read2.substr(0,len_key2),keys1)<<endl;
 
 	//if (((read1.substr(0,len_key1) == keys0) && (read2.substr(0,len_key2) == keys1)) || //perfect match
 	if (( (edits(read1.substr(0,len_key1),keys0) == 0)  && (edits(read2.substr(0,len_key2),keys1) == 0)  ) || //perfect match
 	    (options_allowMissing && (edits(read1.substr(0,len_key1),keys0) == 1) && (edits(read2.substr(0,len_key2),keys1) == 0) )||  //&& (read2.substr(0,len_key2) == keys1)) || //1mm in first key
 	    (options_allowMissing && (edits(read1.substr(0,len_key1),keys0) == 0) && (edits(read2.substr(0,len_key2),keys1) == 1) ) // (read1.substr(0,len_key1) == keys0)
 	    ){ //1mm in second key
-	    qual1 = qual1.substr(len_key1,read1.size()-len_key1);
 	    read1 = read1.substr(len_key1,read1.size()-len_key1);
+	    qual1 = qual1.substr(len_key1,qual1.size()-len_key1);
 
-	    qual2 = qual2.substr(len_key2,read2.size()-len_key2);
 	    read2 = read2.substr(len_key2,read2.size()-len_key2);
+	    qual2 = qual2.substr(len_key2,qual2.size()-len_key2);
 
 	}else{
 	    if(options_allowMissing && 
@@ -1139,11 +1142,11 @@ inline bool MergeTrimReads::checkKeyPairedEnd(string & read1,
 	    }else{
 		if(options_allowMissing && 
 		   (read1.substr(0,len_key1) == keys0) && (len_key2>0?(read2.substr(0,len_key2-1) == keys1.substr(1,len_key2-1)):true)){
-		    qual1 = qual1.substr(len_key1,read1.size()-len_key1);
 		    read1 = read1.substr(len_key1,read1.size()-len_key1);
+		    qual1 = qual1.substr(len_key1,qual1.size()-len_key1);
 
-		    qual2 = qual2.substr(len_key2-1,read2.size()-(len_key2-1));
 		    read2 = read2.substr(len_key2-1,read2.size()-(len_key2-1));
+		    qual2 = qual2.substr(len_key2-1,qual2.size()-(len_key2-1));
 		}else{
 		    toReturn.code    ='K';
 		    toReturn.sequence="";
@@ -1571,17 +1574,40 @@ inline void MergeTrimReads::computeConsensusPairedEnd( const string & read1,
 	}
 
 
+	if(len_ikey>0){
+	    if(int(newSeq.size())>len_ikey){
+		if ((newSeq.substr(0,len_ikey) == ikey)  || //perfect match
+		    (options_allowMissing && (edits(newSeq.substr(0,len_ikey),ikey) == 1))  //1mm 	     
+		    ){ //1mm in second key
 
-	toReturn.code    =' ';
-	//TODO eliminate the copy
-	toReturn.sequence=newSeq;	   
-	toReturn.quality =newQual;	
+		    newSeq = newSeq.substr(  len_ikey,newSeq.size() -len_ikey);
+		    newQual = newQual.substr(len_ikey,newQual.size()-len_ikey);
 
+		    toReturn.code    =' ';
+		    //TODO eliminate the copy
+		    toReturn.sequence=newSeq;	   
+		    toReturn.quality =newQual;
+		    
+		}else{
+		    toReturn.code    ='K';
+		    toReturn.sequence=newSeq;	   
+		    toReturn.quality =newQual;	
+		    //return toReturn;
+		}
+	    }
+	}else{
+	
+	    toReturn.code    =' ';
+	    //TODO eliminate the copy
+	    toReturn.sequence=newSeq;	   
+	    toReturn.quality =newQual;
+	    
+	}
 	// cout<<toReturn.sequence<<endl;
 	//return toReturn;
 
 	
-    }else{
+    }else{ //if is has insufficient likelihood
 
 	toReturn.code    =' ';
 	toReturn.sequence="";	   
@@ -1687,7 +1713,24 @@ merged MergeTrimReads::process_SR(string  read1,
         read1 = read1.substr(0,logLikelihoodTotalIdx);
         qual1 = qual1.substr(0,logLikelihoodTotalIdx);
 
+	if(len_ikey>0){
+	    if(int(read1.size())>len_ikey){
+		if ((read1.substr(0,len_ikey) == ikey)  || //perfect match
+		    (options_allowMissing && (edits(read1.substr(0,len_ikey),ikey) == 1))  //1mm 	     
+		    ){ //1mm in second key
 
+		    read1 = read1.substr(len_ikey,read1.size()-len_ikey);
+		    qual1 = qual1.substr(len_ikey,qual1.size()-len_ikey);
+
+		}else{
+		    toReturn.code    ='K';
+		    toReturn.sequence=read1;	   
+		    toReturn.quality =qual1;	
+		    return toReturn;
+		}
+	    }
+	}
+	
 	if( read1.length() < min_length){
 	    toReturn.code    ='D';
 	    toReturn.sequence="";	   
@@ -1736,7 +1779,7 @@ merged MergeTrimReads::process_PE( string  read1,  string  qual1,
 				   string  read2,  string  qual2){
 
 
-    //cerr<<"1:"<<read1<<" 2:"<<read2<<endl;
+    // cerr<<endl<<"-----------"<<endl<<"1:"<<read1<<endl<<"2:"<<read2<<endl;
 
     merged toReturn;
 
@@ -1985,12 +2028,14 @@ void MergeTrimReads::setRadapter(const string& reverse){
 MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, const string& chimera_,
 				const string& key1_, const string& key2_,
 				const bool trimKey_,
+				const string& ikey_, 
 				int trimcutoff_,bool allowMissing_,
 				bool ancientDNA_,double location_,double scale_,bool useDist_,int qualOffset):
     //bool mergeoverlap_) : 
     min_length (5),
     qualOffset (qualOffset),
     trimKey(trimKey_),
+    ikey(ikey_),
 
 
     //FLAGs for merged reads
@@ -2006,7 +2051,15 @@ MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, 
      
      initialized = false;
 
-    
+     if(!ikey.empty()){
+	 len_ikey=ikey.size();
+     }else{
+	 len_ikey=0;
+     }
+     
+     // cerr<<"key1_"<<key1_<<endl;
+     // cerr<<"key2_"<<key2_<<endl;
+
      //TODO: the default values should be stored in the config.json file, not here
      max_prob_N = 0.25;
     
@@ -2694,7 +2747,7 @@ void MergeTrimReads::processSingle(BamAlignment & al){
     // cerr<<qual1<<endl;
 
     merged result=process_SR(read1,qual1);
-
+    cerr<<"CODE "<<result.code<<endl;
     if(result.code != ' '){ //either chimera or missing key
 	string prevZQ1="";
 	//BamAlignment toWrite (al);//build from the previous one

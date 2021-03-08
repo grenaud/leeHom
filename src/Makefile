@@ -54,7 +54,6 @@ leeHom: leeHom.o  MergeTrimReads.o ${LIBGABLIBOBJ}
 	@echo "linking"
 	@echo ${LDLIBS}
 	@echo ${LDFLAGS}
-
 	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS) 
 
 ${LIBGABINC}/libgab.h:

@@ -92,8 +92,11 @@ class MergeTrimReads{
     bool options_allowMissing;
     string keys0;
     string keys1;
+    string ikey;
     int len_key1;
     int len_key2;
+    int len_ikey;
+
     size_t options_trimCutoff;
     //bool options_mergeoverlap;
     bool ancientDNA ;
@@ -298,7 +301,7 @@ class MergeTrimReads{
 
  public:
     MergeTrimReads (const string& forward_, const string& reverse_, const string& chimera_,
-		    const string& key1_="", const string& key2_="",const bool trimKey_=false,
+		    const string& key1_="", const string& key2_="",const bool trimKey_=false,const string& ikey_="",
 		    int trimcutoff_=1,bool allowMissing_=false,bool ancientDNA_=false,double location_=-1.0,double scale_=-1.0,bool useDist_=false,int    qualOffset=33);
 
     MergeTrimReads(const MergeTrimReads & other);

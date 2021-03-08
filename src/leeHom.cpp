@@ -1,4 +1,3 @@
-
 #include <iostream>
 #include <fstream>
 #include <queue>
@@ -1740,6 +1739,7 @@ int main (int argc, char *argv[]) {
     string adapter_S      =options_adapter_S_BAM;
     string adapter_chimera=options_adapter_chimera_BAM;
     string key="";
+    string ikey="";
     bool   trimKey=false;
     
     bool   allowMissing=false;
@@ -1816,6 +1816,7 @@ int main (int argc, char *argv[]) {
 			      "\t\t"+"     --auto" +"\t\t\t\t"+"Auto detect adapters, requires at least 1M reads, does NOT currently support UMIs (def. : "+boolStringify(detectAdapt)+")"+"\n"+
 
 			      "\t\t"+"-c , --FirstReadChimeraFilter" +"\t\t"+"If the forward read looks like this sequence, the cluster is filtered out.\n\t\t\t\t\t\t\tProvide several sequences separated by comma (def. Multiplex: "+options_adapter_chimera_BAM.substr(0,30)+")"+"\n"+
+			      "\t\t"+"--ikey"+"\t\t\t\t"+"Key sequence at the beginning of the insert. (default '"+ikey+"')"+"\n"+
 			      "\t\t"+"-k , --key"+"\t\t\t\t"+"Key sequence with which each sequence starts. Comma separate for forward and reverse reads. (default '"+key+"')"+"\n"+
 			      "\t\t"+"--trimkey"     +"\t\t\t\t"+"Trim the key sequence even for untrimmed. (default '"+boolStringify(trimKey)+"')"+"\n"+
 
@@ -1981,6 +1982,12 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(strcmp(argv[i],"--ikey") == 0 ){
+	    ikey =string(argv[i+1]);
+	    i++;
+	    continue;
+	}
+
 	if(strcmp(argv[i],"-k") == 0 || strcmp(argv[i],"--keys") == 0 ){
 	    key =string(argv[i+1]);
 	    i++;
@@ -2104,7 +2111,7 @@ int main (int argc, char *argv[]) {
 
 
     mtr = new MergeTrimReads(adapter_F,adapter_S,adapter_chimera,
-			     key1,key2,trimKey,
+			     key1,key2,trimKey,ikey,
 			     trimCutoff,allowMissing,ancientDNA,location,scale,useDist,qualOffset);
     
     fqwriters onereadgroup;
@@ -2495,7 +2502,7 @@ int main (int argc, char *argv[]) {
 				    }
 				}
 			
-				onereadgroup.singlef<<"@"<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1 <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1 <<endl;
+				onereadgroup.singlef<<""<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1 <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1 <<endl;
 				continue;
 			    }
 		    
