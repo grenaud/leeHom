@@ -9,6 +9,7 @@
 // // //#define DEBUGTOTALOV
 // // #define DEBUGPARTIALOV
 //#define CONSBASEPROB
+//#define BASEPROBINIT
 
 // #define DEBUGPR
 // #define DEBUGSCORE
@@ -449,10 +450,11 @@ inline baseQual MergeTrimReads::cons_base_probInit(baseQual  base1,baseQual base
     double lprob2 = log10(base2.prob);
     double aprob2 = log10(1.0-base2.prob)-log10(3.0);
 
-#ifdef CONSBASEPROB
+#ifdef BASEPROBINIT
     cerr<<base1.base<<"\t"<<base1.prob<<"\t"<<base2.base<<"\t"<<base2.prob<<"\t"<<endl;
 #endif
 
+    //sum of the probabilities for the denominator
     double total_prob = 0.0;
     for(int i=0;i<4;i++){
 	double help = 0.0;
@@ -464,9 +466,18 @@ inline baseQual MergeTrimReads::cons_base_probInit(baseQual  base1,baseQual base
 	    help+=lprob2;
 	else
 	    help+=aprob2;
+
+#ifdef BASEPROBINIT
+	cerr<<"denom "<<dnaAlphabet[i]<<"\t"<<base1.base<<"\t"<<base2.base<<"\t"<<help<<"\t"<<endl;
+#endif
+
 	total_prob+=pow(10.0,help);
     }
     total_prob = log10(total_prob);
+
+#ifdef BASEPROBINIT
+    cerr<<"total_prob="<<total_prob<<endl;
+#endif
 
     baseQual toReturn;
     toReturn.base='N' ;
@@ -474,7 +485,8 @@ inline baseQual MergeTrimReads::cons_base_probInit(baseQual  base1,baseQual base
 
     for(unsigned int i=0;i<bases.size();i++){
 	double thelp=0.0;
-	for(int k=0;k<4;k++){
+
+	for(int k=0;k<4;k++){//sum of all the probabilitie minus the current one
 	    if(bases[i] != dnaAlphabet[k]){
 		double help=0.0;
 		if(base1.base == dnaAlphabet[k])
@@ -489,14 +501,31 @@ inline baseQual MergeTrimReads::cons_base_probInit(baseQual  base1,baseQual base
 		thelp+=pow(double(10.0),help);
 	    }
 	}
-	thelp=log10(thelp);
-	int hqual = int( floor( min(60.0,-10.0*(thelp-total_prob)) + 0.5) );
-       	if( (hqual > toReturn.qual) || ((hqual == toReturn.qual) && (randomGen() >=0.5)) ){
+	thelp=log10(thelp);//this is the denominator minus the current one
+	
+	int hqual = int( floor( min(60.0,-10.0*(thelp-total_prob)) + 0.5) ); //ratio numererator/denomiator
+
+	
+#ifdef BASEPROBINIT
+	cerr<<"numen "<<bases[i]<<"\t"<<base1.base<<"\t"<<base2.base<<"\t"<<thelp<<"\t"<<hqual<<" current="<<toReturn.qual<<endl;
+#endif
+
+       	if( ((hqual+qualOffset) > toReturn.qual) || (( (hqual+qualOffset) == toReturn.qual) && (randomGen() >=0.5)) ){//take the max or flip a coin if there is a tie
 	    toReturn.base = bases[i];
 	    toReturn.qual = char(hqual+qualOffset);
 	}
+	
+#ifdef BASEPROBINIT
+	cerr<<"currentres "<<toReturn.base<<"\t"<<toReturn.qual<<endl;
+#endif
+
     }
 
+#ifdef BASEPROBINIT
+	cerr<<"finalresult "<<toReturn.base<<"\t"<<toReturn.qual<<endl;
+#endif
+
+    
     return toReturn;
 }
 
