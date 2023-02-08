@@ -411,12 +411,18 @@ void MergeTrimReads::initMerge(){
 inline double MergeTrimReads::randomGen(){
     //    static bool initialized = false;
 
+    
     if(initialized == false){
-	struct timeval time;
-	gettimeofday(&time,NULL);
-	srand(time.tv_usec);
+	if(seedSpecified){
+	    srand(seed);
+	}else{
+	    //use time of day as seed
+	    struct timeval time;
+	    gettimeofday(&time,NULL);
+	    srand(time.tv_usec);
+	}
 	initialized=true;
-	return  (double(rand())/double(RAND_MAX));       
+	return  (double(rand())/double(RAND_MAX));	
     }else{
 	return  (double(rand())/double(RAND_MAX));       
     }
@@ -2058,8 +2064,8 @@ MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, 
 				const string& key1_, const string& key2_,
 				const bool trimKey_,
 				const string& ikey_, 
-				int trimcutoff_,bool allowMissing_,
-				bool ancientDNA_,double location_,double scale_,bool useDist_,int qualOffset):
+				const int trimcutoff_,const bool allowMissing_,
+				const bool ancientDNA_,const double location_,const double scale_,const bool useDist_,const int qualOffset,const unsigned int seed_,const bool seedSpecified_):
     //bool mergeoverlap_) : 
     min_length (5),
     qualOffset (qualOffset),
@@ -2075,7 +2081,9 @@ MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, 
     
     location(location_),
     scale(scale_),
-    useDist(useDist_)
+    useDist(useDist_),
+    seed(seed_),
+    seedSpecified(seedSpecified_)				    
  {
      
      initialized = false;

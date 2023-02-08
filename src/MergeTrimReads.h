@@ -86,6 +86,8 @@ class MergeTrimReads{
 
     size_t min_overlap_seqs;
 
+    unsigned int seed;
+    bool seedSpecified;
 
     /* //  Key variables /// */
     bool handle_key;
@@ -302,7 +304,14 @@ class MergeTrimReads{
  public:
     MergeTrimReads (const string& forward_, const string& reverse_, const string& chimera_,
 		    const string& key1_="", const string& key2_="",const bool trimKey_=false,const string& ikey_="",
-		    int trimcutoff_=1,bool allowMissing_=false,bool ancientDNA_=false,double location_=-1.0,double scale_=-1.0,bool useDist_=false,int    qualOffset=33);
+		    const int trimcutoff_=1,
+		    const bool allowMissing_=false,
+		    const bool ancientDNA_=false,
+		    const double location_=-1.0,
+		    const double scale_=-1.0,
+		    const bool useDist_=false,
+		    const int    qualOffset=33,
+		    const unsigned int seed=0,const bool seedSpecified=false);
 
     MergeTrimReads(const MergeTrimReads & other);
     ~MergeTrimReads();

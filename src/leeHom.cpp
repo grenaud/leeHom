@@ -12,6 +12,7 @@
 #include "FastQParser.h"
 
 #include "libgab.h"
+#include "version.h"
 
 //TODO char qualscore to like
 
@@ -29,13 +30,13 @@ using namespace std;
 using namespace BamTools;
 
 typedef struct { 
-    ogzstream single;
-    ogzstream pairr1;
-    ogzstream pairr2;
+    ogzstream * single;
+    ogzstream * pairr1;
+    ogzstream * pairr2;
 
-    ogzstream singlef;
-    ogzstream pairr1f;
-    ogzstream pairr2f;
+    ogzstream * singlef;
+    ogzstream * pairr1f;
+    ogzstream * pairr2f;
 
 } fqwriters;
 
@@ -1485,15 +1486,15 @@ bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,Merge
 				}
 			    }
 			}
-			
-			onereadgroup->pairr2f<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
-			onereadgroup->pairr1f<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
+
+			(*onereadgroup->pairr1f)<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
+			(*onereadgroup->pairr2f)<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
 
 			continue;
 		    
 		    }else{
 		        if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence			    
-			    onereadgroup->single<<"@"<<dataToWrite->dataToProcess->at(i).d1<<" " <<dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).sequence<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).quality<<endl;    	    
+			    (*onereadgroup->single)<<"@"<<dataToWrite->dataToProcess->at(i).d1<<" " <<dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).sequence<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).quality<<endl;    	    
 			    
 			    if( (dataToWrite->dataToProcess->at(i).sequence.length()+umif+umir+umtf+umtr) > max(dataToWrite->dataToProcess->at(i).s1.length(),dataToWrite->dataToProcess->at(i).s2.length()) ){
 				mtr->incrementCountmergedoverlap();
@@ -1504,8 +1505,8 @@ bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,Merge
 			}else{ //keep as is
 			    mtr->incrementCountnothing();
 			    
-			    onereadgroup->pairr2<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<dataToWrite->dataToProcess->at(i).cmt<<  endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
-			    onereadgroup->pairr1<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<dataToWrite->dataToProcess->at(i).cmt<<  endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
+			    (*onereadgroup->pairr1)<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<dataToWrite->dataToProcess->at(i).cmt<<  endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;						    
+			    (*onereadgroup->pairr2)<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<dataToWrite->dataToProcess->at(i).cmt<<  endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
 			    
 			}
 		    }
@@ -1530,16 +1531,16 @@ bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,Merge
 			    }
 			}
 			
-			onereadgroup->singlef<<""<<dataToWrite->dataToProcess->at(i).d1<<" " <<dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).s1 <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1 <<endl;
+			(*onereadgroup->singlef)<<""<<dataToWrite->dataToProcess->at(i).d1<<" " <<dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).s1 <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1 <<endl;
 			continue;
 		    }
 		    
 		    if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence
 			mtr->incrementCounttrimmed();
-			onereadgroup->single<<""<<dataToWrite->dataToProcess->at(i).d1<<" "<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).sequence <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).quality<<endl;
+			(*onereadgroup->single)<<""<<dataToWrite->dataToProcess->at(i).d1<<" "<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).sequence <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).quality<<endl;
 		    }else{
 			mtr->incrementCountnothing();
-			onereadgroup->single<<""<<dataToWrite->dataToProcess->at(i).d1<<" "<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1       <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1     <<endl;
+			(*onereadgroup->single)<<""<<dataToWrite->dataToProcess->at(i).d1<<" "<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1       <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1     <<endl;
 		    }
 		}
 			
@@ -1765,12 +1766,20 @@ int main (int argc, char *argv[]) {
 
     bool specifiedAdapt=false;
     bool fastqFormat=false;
+    
+    
     string fastqfile1   = "";
     string fastqfile2   = "";
     string fastqoutfile = "";
+
+    string intfastqoutfile = "";
+    
     bool singleEndModeFQ=true;
     int    qualOffset     = 33;
 
+    bool seedSpecified=false;
+    unsigned int seed=0;
+    
     unsigned int umif=0;
     unsigned int umir=0;
     unsigned int umiTf=0;//trim after
@@ -1784,9 +1793,11 @@ int main (int argc, char *argv[]) {
 			      "\nThis program takes an unaligned BAM where mates are consecutive\nor fastq files and trims and merges reads\n"+
 
 			      "\n\tYou can specify a unaligned bam file or one or two fastq :\n"+			      
-			      "\t\t"+"-fq1" +"\t\t"+"First fastq"+"\n"+
-			      "\t\t"+"-fq2" +"\t\t"+"Second  fastq file (for paired-end)"+"\n"+
-			      "\t\t"+"-fqo" +"\t\t"+"Output fastq prefix"+"\n\n"+
+			      "\t\t"+"-fq1 [file]" +"\t\t"+"First fastq file"+"\n"+
+			      "\t\t"+"-fq2 [file]" +"\t\t"+"Second  fastq file (for paired-end)"+"\n"+
+			      "\t\t"+"-fqo [file]" +"\t\t"+"Output fastq prefix to file"+"\n"+
+			      "\t\t"+"-fqt [file]" +"\t\t"+"Output interweaved fastq"+"\n\n"+
+
 			      //"\t"+"-p , --PIPE"+"\n\t\t"+"Read BAM from and write it to PIPE"+"\n"+
 			      "\t"+"-o , --outfile" +"\t\t"+"Output (BAM format)."+"\n"+
 
@@ -1797,6 +1808,7 @@ int main (int argc, char *argv[]) {
 			      //"\t"+" , --SAM" +"\n\t\t"+"Output SAM not BAM."+"\n"+
 			      "\t"+"--aligned" +"\t\t"+"Allow reads to be aligned (default "+boolStringify(allowAligned)+")"+"\n"+
 			      "\t"+"-v , --verbose" +"\t\t"+"Turn all messages on (default "+boolStringify(verbose)+")"+"\n"+
+			      "\t"+"--version" +"\t\t"+"Just print version and quit"+"\n"+
 			      "\t"+"--log [log file]" +"\t"+"Print a tally of merged reads to this log file (default only to stderr)"+"\n"+
 			      "\t"+"--phred64" +"\t\t"+"Use PHRED 64 as the offset for QC scores (default : PHRED33)"+"\n"+
 			      "\t"+"-t [threads]" +"\t\t"+"Use multiple cores (default : "+stringify(numberOfThreads)+")"+"\n"+
@@ -1811,6 +1823,8 @@ int main (int argc, char *argv[]) {
 			      //			      "\t\t\t\t\t\t\tGood for merging ancient DNA reads into a single sequence\n\n"
 			      "\n\t\t"+"--keepOrig"+"\t\t\t\t"+"Write original reads if they are trimmed or merged  (default "+boolStringify(keepOrig)+")"+"\n"+
 			      "\t\t\t\t\t\t\tSuch reads will be marked as PCR duplicates\n\n"
+			      "\n\t\t"+"--seed [seed]"+"\t\t\t\t"+"Set a seed for the random bases (default randomly generated)"+"\n"+
+			      "\n"+
 			      "\t\t"+"-f , --adapterFirstRead" +"\t\t\t"+"Adapter that is observed after the forward read (def. Multiplex: "+options_adapter_F_BAM.substr(0,30)+")"+"\n"+
 			      "\t\t"+"-s , --adapterSecondRead" +"\t\t"+"Adapter that is observed after the reverse read (def. Multiplex: "+options_adapter_S_BAM.substr(0,30)+")"+"\n"+
 			      "\t\t"+"     --auto" +"\t\t\t\t"+"Auto detect adapters, requires at least 1M reads, does NOT currently support UMIs (def. : "+boolStringify(detectAdapt)+")"+"\n"+
@@ -1838,6 +1852,12 @@ int main (int argc, char *argv[]) {
     	cout<<""<<endl;
     	cout<<usage<<endl;
     	return 1;
+    }
+
+
+    if( (argc== 2 && string(argv[1]) == "--version") ){
+	cout<<"leeHom version: "<<VERSION<<endl;
+	return 0; 
     }
 
     
@@ -1890,6 +1910,14 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(strcmp(argv[i],"-fqt") == 0 ){
+	    intfastqoutfile=string(argv[i+1]);
+	    fastqFormat=true;
+	    lastarg=argc;
+	    i++;
+	    continue;
+	}
+
 
 
 
@@ -1925,6 +1953,10 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(string(argv[i]) == "--version"  ){
+	    cout<<"leeHom version: "<<VERSION<<endl;
+	    return 0; 
+	}
 
 	if(strcmp(argv[i],"-o") == 0 || strcmp(argv[i],"--outfile") == 0 ){
 	    bamFileOUT =string(argv[i+1]);
@@ -2004,6 +2036,12 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(strcmp(argv[i],"--seed") == 0 ){
+	    seedSpecified=true;
+	    seed = destringify<unsigned int>(argv[i+1]);
+	    i++;
+	    continue;
+	}
 
 	if(strcmp(argv[i],"--umif") == 0 ){
 	    umif = destringify<unsigned int>(argv[i+1]);
@@ -2062,12 +2100,19 @@ int main (int argc, char *argv[]) {
 	    return 1;	    
 	}
     }else{
-	if(fastqoutfile==""){
+	if(!fastqoutfile.empty() && !intfastqoutfile.empty()){
+	    cerr<<"If running in fastq input/output mode, cannot specify both -fqo and -fqt."<<endl;
+	    return 1;	    	    
+	}
+	
+	if(fastqoutfile.empty() && intfastqoutfile.empty()){
 	    cerr<<"If running in fastq input/output mode, the output must specified."<<endl;
 	    return 1;	    	    
 	}
     }
 
+
+    
     if(specifiedAdapt && detectAdapt){
 	cerr<<"Cannot specify adapters and automatically detect them"<<endl;
 	return 1;	    
@@ -2112,7 +2157,7 @@ int main (int argc, char *argv[]) {
 
     mtr = new MergeTrimReads(adapter_F,adapter_S,adapter_chimera,
 			     key1,key2,trimKey,ikey,
-			     trimCutoff,allowMissing,ancientDNA,location,scale,useDist,qualOffset);
+			     trimCutoff,allowMissing,ancientDNA,location,scale,useDist,qualOffset,seed,seedSpecified);
     
     fqwriters onereadgroup;
     if(fastqFormat){
@@ -2165,43 +2210,75 @@ int main (int argc, char *argv[]) {
 	    }
 	    fqp1 = new FastQParser (fastqfile1);
 
-	    string outdirs   = fastqoutfile+".fq.gz";
-	    string outdirsf  = fastqoutfile+".fail.fq.gz";
+	    if(!fastqoutfile.empty()){
+		string outdirs   = fastqoutfile+".fq.gz";
+		string outdirsf  = fastqoutfile+".fail.fq.gz";
 
-	    onereadgroup.single.open(outdirs.c_str(), ios::out);
-	    onereadgroup.singlef.open(outdirsf.c_str(), ios::out);
-
-	    if(!onereadgroup.single.good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
-	    if(!onereadgroup.singlef.good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
-
+		onereadgroup.single  = new ogzstream();
+		onereadgroup.singlef = new ogzstream();
+		
+		onereadgroup.single->open(outdirs.c_str(), ios::out);
+		onereadgroup.singlef->open(outdirsf.c_str(), ios::out);
+		
+		if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
+		if(!onereadgroup.singlef->good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
+	    }else{
+		string outdirs   = intfastqoutfile;		
+		onereadgroup.single->open(outdirs.c_str(), ios::out);
+		onereadgroup.singlef=onereadgroup.single;
+		
+		if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
+	    }
 	    
 	}else{
 	    fqp1 = new FastQParser (fastqfile1);
 	    fqp2 = new FastQParser (fastqfile2);
+	    if(!fastqoutfile.empty()){
 
-	    string outdirs   = fastqoutfile+".fq.gz";
-	    string outdir1   = fastqoutfile+"_r1.fq.gz";
-	    string outdir2   = fastqoutfile+"_r2.fq.gz";
+		string outdirs   = fastqoutfile+".fq.gz";
+		string outdir1   = fastqoutfile+"_r1.fq.gz";
+		string outdir2   = fastqoutfile+"_r2.fq.gz";
 
-	    string outdirsf  = fastqoutfile+".fail.fq.gz";
-	    string outdir1f  = fastqoutfile+"_r1.fail.fq.gz";
-	    string outdir2f  = fastqoutfile+"_r2.fail.fq.gz";
+		string outdirsf  = fastqoutfile+".fail.fq.gz";
+		string outdir1f  = fastqoutfile+"_r1.fail.fq.gz";
+		string outdir2f  = fastqoutfile+"_r2.fail.fq.gz";
+		onereadgroup.single  = new ogzstream();
+		onereadgroup.pairr1  = new ogzstream();
+		onereadgroup.pairr2  = new ogzstream();
 
-	    onereadgroup.single.open(outdirs.c_str(), ios::out);
-	    onereadgroup.pairr1.open(outdir1.c_str(), ios::out);
-	    onereadgroup.pairr2.open(outdir2.c_str(), ios::out);
+		onereadgroup.singlef = new ogzstream();
+		onereadgroup.pairr1f = new ogzstream();
+		onereadgroup.pairr2f = new ogzstream();
+		
+		onereadgroup.single->open(outdirs.c_str(), ios::out);
+		onereadgroup.pairr1->open(outdir1.c_str(), ios::out);
+		onereadgroup.pairr2->open(outdir2.c_str(), ios::out);
 
-	    onereadgroup.singlef.open(outdirsf.c_str(), ios::out);
-	    onereadgroup.pairr1f.open(outdir1f.c_str(), ios::out);
-	    onereadgroup.pairr2f.open(outdir2f.c_str(), ios::out);
+		onereadgroup.singlef->open(outdirsf.c_str(), ios::out);
+		onereadgroup.pairr1f->open(outdir1f.c_str(), ios::out);
+		onereadgroup.pairr2f->open(outdir2f.c_str(), ios::out);
 
-	    if(!onereadgroup.single.good()){       cerr<<"Cannot write to file "<<outdirs<<endl;  return 1; }
-	    if(!onereadgroup.pairr1.good()){       cerr<<"Cannot write to file "<<outdir1<<endl;  return 1; }
-	    if(!onereadgroup.pairr2.good()){       cerr<<"Cannot write to file "<<outdir2<<endl;  return 1; }
+		if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl;  return 1; }
+		if(!onereadgroup.pairr1->good()){       cerr<<"Cannot write to file "<<outdir1<<endl;  return 1; }
+		if(!onereadgroup.pairr2->good()){       cerr<<"Cannot write to file "<<outdir2<<endl;  return 1; }
 	    
-	    if(!onereadgroup.singlef.good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
-	    if(!onereadgroup.pairr1f.good()){      cerr<<"Cannot write to file "<<outdir1f<<endl; return 1; }
-	    if(!onereadgroup.pairr2f.good()){      cerr<<"Cannot write to file "<<outdir2f<<endl; return 1; }	    
+		if(!onereadgroup.singlef->good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
+		if(!onereadgroup.pairr1f->good()){      cerr<<"Cannot write to file "<<outdir1f<<endl; return 1; }
+		if(!onereadgroup.pairr2f->good()){      cerr<<"Cannot write to file "<<outdir2f<<endl; return 1; }
+	    }else{
+		string outdirs   = intfastqoutfile;
+		onereadgroup.single  = new ogzstream();
+
+		onereadgroup.single->open(outdirs.c_str(), ios::out);
+
+		onereadgroup.pairr1 =onereadgroup.single;
+		onereadgroup.pairr2 =onereadgroup.single;
+		onereadgroup.singlef=onereadgroup.single;
+		onereadgroup.pairr1f=onereadgroup.single;
+		onereadgroup.pairr2f=onereadgroup.single;
+		
+		if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
+	    }
 	}
 
 	unsigned int rank=0;
@@ -2453,15 +2530,16 @@ int main (int argc, char *argv[]) {
 					}
 				    }
 				}
-				
-				onereadgroup.pairr2f<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
-				onereadgroup.pairr1f<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
 
+
+				(*onereadgroup.pairr1f)<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
+
+				(*onereadgroup.pairr2f)<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
 				continue;
 		    
 			    }else{
 				if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence			    
-				    onereadgroup.single<<"@"<<dataToWrite->dataToProcess->at(i).d1 << dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).sequence<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).quality<<endl;    	    
+				    (*onereadgroup.single)<<"@"<<dataToWrite->dataToProcess->at(i).d1 << dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).sequence<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).quality<<endl;    	    
 			    
 				    if( (dataToWrite->dataToProcess->at(i).sequence.length()+umif+umir+umiTf+umiTr) > max(dataToWrite->dataToProcess->at(i).s1.length(),dataToWrite->dataToProcess->at(i).s2.length()) ){
 					mtr->incrementCountmergedoverlap();
@@ -2472,11 +2550,11 @@ int main (int argc, char *argv[]) {
 				}else{ //keep as is
 				    mtr->incrementCountnothing();
 				    if(trimKey){
-					onereadgroup.pairr2<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s2.substr( key2.length() )<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2.substr( key2.length() )<<endl;
-					onereadgroup.pairr1<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s1.substr( key1.length() )<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1.substr( key1.length() )<<endl;
+					(*onereadgroup.pairr1)<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s1.substr( key1.length() )<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1.substr( key1.length() )<<endl;
+					(*onereadgroup.pairr2)<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s2.substr( key2.length() )<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2.substr( key2.length() )<<endl;
 				    }else{
-					onereadgroup.pairr2<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s2                        <<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2                        <<endl;
-					onereadgroup.pairr1<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s1                        <<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1                        <<endl;
+					(*onereadgroup.pairr1)<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s1                        <<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1                        <<endl;
+					(*onereadgroup.pairr2)<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s2                        <<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2                        <<endl;
 				    }
 			    
 				}
@@ -2502,19 +2580,19 @@ int main (int argc, char *argv[]) {
 				    }
 				}
 			
-				onereadgroup.singlef<<""<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1 <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1 <<endl;
+				(*onereadgroup.singlef)<<""<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1 <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1 <<endl;
 				continue;
 			    }
 		    
 			    if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence
 				mtr->incrementCounttrimmed();
-				onereadgroup.single<<""<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).sequence <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).quality<<endl;
+				(*onereadgroup.single)<<""<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).sequence <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).quality<<endl;
 			    }else{
 				mtr->incrementCountnothing();
 				if(trimKey){
-				    onereadgroup.single<<""<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1.substr( key1.length() )<<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1.substr( key1.length() )<<endl;
+				    (*onereadgroup.single)<<""<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1.substr( key1.length() )<<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1.substr( key1.length() )<<endl;
 				}else{
-				    onereadgroup.single<<""<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1                        <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1                        <<endl;
+				    (*onereadgroup.single)<<""<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1                        <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1                        <<endl;
 				}
 			    }
 			}
@@ -2569,18 +2647,39 @@ int main (int argc, char *argv[]) {
 
 
 	if(singleEndModeFQ){
-
-	    onereadgroup.single.close();
-	    onereadgroup.singlef.close();
+	    
+	    if(!fastqoutfile.empty()){
+		onereadgroup.single->close();
+		onereadgroup.singlef->close();
+		delete(onereadgroup.single);
+		delete(onereadgroup.singlef);
+	    }else{
+		onereadgroup.single->close();
+		delete(onereadgroup.single);
+	    }
 	    
 	}else{
-	    onereadgroup.single.close();
-	    onereadgroup.pairr1.close();
-	    onereadgroup.pairr2.close();
-	    
-	    onereadgroup.singlef.close();
-	    onereadgroup.pairr1f.close();
-	    onereadgroup.pairr2f.close();
+	    if(!fastqoutfile.empty()){
+		onereadgroup.single->close();
+		onereadgroup.pairr1->close();
+		onereadgroup.pairr2->close();
+		
+		onereadgroup.singlef->close();
+		onereadgroup.pairr1f->close();
+		onereadgroup.pairr2f->close();
+
+		delete(onereadgroup.single);
+		delete(onereadgroup.pairr1);
+		delete(onereadgroup.pairr2);
+		
+		delete(onereadgroup.singlef);
+		delete(onereadgroup.pairr1f);
+		delete(onereadgroup.pairr2f);
+		
+	    }else{
+		onereadgroup.single->close();
+		delete(onereadgroup.single);
+	    }
 	}
     
 	

@@ -50,11 +50,21 @@ all:    ${BAMTOOLSLIBOBJ} ${LIBGABLIBOBJ} MergeTrimReads.o leeHom
 %.o: %.cpp
 	${CXX} -c ${CXXFLAGS} $^ 
 
-leeHom: leeHom.o  MergeTrimReads.o ${LIBGABLIBOBJ}
+version.h:
+	./get_version.sh
+
+leeHom: version.h leeHom.o  MergeTrimReads.o ${LIBGABLIBOBJ}
 	@echo "linking"
 	@echo ${LDLIBS}
 	@echo ${LDFLAGS}
 	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS) 
+
+static: version.h leeHom.o  MergeTrimReads.o ${LIBGABLIBOBJ}
+	@echo "staic linking"
+	@echo ${LDLIBS}
+	@echo ${LDFLAGS}
+	${CXX} -static -o leeHom $^ $(LDLIBS) $(LDFLAGS) 
+
 
 ${LIBGABINC}/libgab.h:
 	rm -rf ../libgab/

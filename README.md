@@ -115,7 +115,7 @@ Contact your sequencing center or core and ask them to send you the sequence of 
 For single-end, no. For paired-end, mate have to be consecutive in the file (i.e. `First mate 1`, `second mate 1`, `First mate 2`, `second mate 2`, _etc.._ ). This can be done by either using raw data from the sequencer or sorting by name.
 
 ## Does my BAM file have to be unmapped?
-BAM files can also be used to store unmapped reads. Ideally, leehom should be used prior to mapping since reads will map to a more accurate location if the adapters have been removed and overlapping stretches have been merged.
+BAM files can also be used to store unmapped reads. leeHom should be used prior to mapping since reads will map to a more accurate location if the adapters have been removed and overlapping stretches have been merged.
 
 
 ## What do the `FF` tags in the BAM file mean?
