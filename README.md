@@ -3,7 +3,7 @@
 QUESTIONS: gabriel [dot] reno [ at sign ] gmail.com
 
 ## About
-leeHom is a program for the Bayesian reconstruction of ancient DNA (the binary is mergeTrimReadsBAM).
+leeHom is a program to trim adapters and merge overlapping sequencing using a Bayesian reconstruction. This is particularly useful for ancient DNA and or DNA shorter fragment sizes like cell-free DNA.
 
 
 ## Downloading:
