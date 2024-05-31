@@ -1772,6 +1772,14 @@ int main (int argc, char *argv[]) {
     string fastqfile2   = "";
     string fastqoutfile = "";
 
+    bool   fastqoutfileb=false;
+    string fastqoutfilese   = "";
+    string fastqoutfilesef  = "";
+    string fastqoutfilepe1  = "";
+    string fastqoutfilepe1f = "";
+    string fastqoutfilepe2  = "";
+    string fastqoutfilepe2f = "";
+
     string intfastqoutfile = "";
     
     bool singleEndModeFQ=true;
@@ -1787,7 +1795,7 @@ int main (int argc, char *argv[]) {
     
     //int    numberOfThreads   = 1;
 
-    const string usage=string(string(argv[0])+
+    const string usage1=string(string(argv[0])+
 			      
 			      " [options] BAMfile"+"\n"+
 			      "\nThis program takes an unaligned BAM where mates are consecutive\nor fastq files and trims and merges reads\n"+
@@ -1795,8 +1803,19 @@ int main (int argc, char *argv[]) {
 			      "\n\tYou can specify a unaligned bam file or one or two fastq :\n"+			      
 			      "\t\t"+"-fq1 [file]" +"\t\t"+"First fastq file"+"\n"+
 			      "\t\t"+"-fq2 [file]" +"\t\t"+"Second  fastq file (for paired-end)"+"\n"+
-			      "\t\t"+"-fqo [file]" +"\t\t"+"Output fastq prefix to file"+"\n"+
-			      "\t\t"+"-fqt [file]" +"\t\t"+"Output interweaved fastq"+"\n\n"+
+			      "\t\t"+"-fqo [string]" +"\t\t"+"Output fastq prefix to file (type --help for more options)"+"\n");
+
+    const string usage2=string(string("or you can use specify manually those:\n")+
+			       "\t\t"+"-fqose   [file]" +"\t\t"+"Output file for fastq single-end (or merged)"+"\n"+
+			       "\t\t"+"-fqosef  [file]" +"\t\t"+"Output file for fastq single-end (or merged) that failed"+"\n"+
+			       "\t\t"+"-fqope1  [file]" +"\t\t"+"Output file for fastq first paired-end (or merged)"+"\n"+
+			       "\t\t"+"-fqope1f [file]" +"\t\t"+"Output file for fastq first paired-end (or merged) that failed"+"\n"+
+			       "\t\t"+"-fqope2  [file]" +"\t\t"+"Output file for fastq first paired-end (or merged)"+"\n"+
+			       "\t\t"+"-fqope2f [file]" +"\t\t"+"Output file for fastq first paired-end (or merged) that failed"+"\n");
+			       
+
+    const string usage3=string(string("")+
+			       "\t\t"+"-fqt [file]" +"\t\t"+"Output interweaved fastq"+"\n\n"+
 
 			      //"\t"+"-p , --PIPE"+"\n\t\t"+"Read BAM from and write it to PIPE"+"\n"+
 			      "\t"+"-o , --outfile" +"\t\t"+"Output (BAM format)."+"\n"+
@@ -1845,12 +1864,19 @@ int main (int argc, char *argv[]) {
 			      "\t\t"+"--trimCutoff"+"\t\t\t\t"+"Lowest number of adapter bases to be observed for single Read trimming (default "+stringify(trimCutoff)+")");
 
     if( (argc== 1) ||
-    	(argc== 2 && string(argv[1]) == "-h") ||
+	(argc== 2 && string(argv[1]) == "-h") ){
+    	cout<<"Usage:"<<endl;
+    	cout<<""<<endl;
+    	cout<<usage1<<usage3<<endl;
+    	return 1;
+    }
+
+    if( 
     	(argc== 2 && string(argv[1]) == "-help") ||
     	(argc== 2 && string(argv[1]) == "--help") ){
     	cout<<"Usage:"<<endl;
     	cout<<""<<endl;
-    	cout<<usage<<endl;
+    	cout<<usage1<<usage2<<usage3<<endl;
     	return 1;
     }
 
@@ -1910,6 +1936,62 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(strcmp(argv[i],"-fqose") == 0 ){
+	    fastqoutfilese=string(argv[i+1]);
+	    fastqFormat=true;
+	    fastqoutfileb=true;
+	    lastarg=argc;
+	    i++;
+	    continue;
+	}
+
+	if(strcmp(argv[i],"-fqosef") == 0 ){
+	    fastqoutfilesef=string(argv[i+1]);
+	    fastqFormat=true;
+	    fastqoutfileb=true;
+	    lastarg=argc;
+	    i++;
+	    continue;
+	}
+
+	if(strcmp(argv[i],"-fqope1") == 0 ){
+	    fastqoutfilepe1=string(argv[i+1]);
+	    fastqFormat=true;
+	    fastqoutfileb=true;
+	    lastarg=argc;
+	    i++;
+	    continue;
+	}
+
+	if(strcmp(argv[i],"-fqope1f") == 0 ){
+	    fastqoutfilepe1f=string(argv[i+1]);
+	    fastqFormat=true;
+	    fastqoutfileb=true;
+	    lastarg=argc;
+	    i++;
+	    continue;
+	}
+
+	if(strcmp(argv[i],"-fqope2") == 0 ){
+	    fastqoutfilepe2=string(argv[i+1]);
+	    fastqFormat=true;
+	    fastqoutfileb=true;
+	    lastarg=argc;
+	    i++;
+	    continue;
+	}
+
+	if(strcmp(argv[i],"-fqope2f") == 0 ){
+	    fastqoutfilepe2f=string(argv[i+1]);
+	    fastqFormat=true;
+	    fastqoutfileb=true;
+	    lastarg=argc;
+	    i++;
+	    continue;
+	}
+
+
+	
 	if(strcmp(argv[i],"-fqt") == 0 ){
 	    intfastqoutfile=string(argv[i+1]);
 	    fastqFormat=true;
@@ -2100,15 +2182,44 @@ int main (int argc, char *argv[]) {
 	    return 1;	    
 	}
     }else{
-	if(!fastqoutfile.empty() && !intfastqoutfile.empty()){
-	    cerr<<"If running in fastq input/output mode, cannot specify both -fqo and -fqt."<<endl;
-	    return 1;	    	    
-	}
-	
-	if(fastqoutfile.empty() && intfastqoutfile.empty()){
+	int boolCfq= (!fastqoutfile.empty()) + (!intfastqoutfile.empty()) + fastqoutfileb;
+
+	if(boolCfq==0){
 	    cerr<<"If running in fastq input/output mode, the output must specified."<<endl;
 	    return 1;	    	    
 	}
+
+	if(boolCfq>1){	
+	    cerr<<"If running in fastq input/output mode, cannot specify both -fqo and -fqt (or the name of the 6 fastq files)."<<endl;
+	    return 1;	    	    
+	}
+	// if(!fastqoutfile.empty() && !intfastqoutfile.empty()){
+	//     cerr<<"If running in fastq input/output mode, cannot specify both -fqo and -fqt."<<endl;
+	//     return 1;	    	    
+	// }
+	
+	// if(fastqoutfile.empty() && intfastqoutfile.empty()){
+	// }
+
+	if(fastqoutfileb){
+	    if(singleEndModeFQ){
+		boolCfq= (!fastqoutfilese.empty()) + (!fastqoutfilesef.empty());
+		if(boolCfq!=2){	
+		    cerr<<"If running in fastq and single-end and specifying the names of the files, 2 files have to be specified, found "<<boolCfq<<endl;
+		    return 1;	    	    
+		}
+	    }else{
+		
+		boolCfq= ((!fastqoutfilese.empty()) + (!fastqoutfilesef.empty()) + (!fastqoutfilepe1.empty()) + (!fastqoutfilepe1f.empty())  + (!fastqoutfilepe2.empty()) + (!fastqoutfilepe2f.empty()));
+
+		if(boolCfq!=6){	
+		    cerr<<"If running in fastq and paired-end and specifying the names of the files, 6 files have to be specified, found "<<boolCfq<<endl;
+		    return 1;
+		}
+
+	    }
+	}
+
     }
 
 
@@ -2222,17 +2333,36 @@ int main (int argc, char *argv[]) {
 		
 		if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
 		if(!onereadgroup.singlef->good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
+
 	    }else{
-		string outdirs   = intfastqoutfile;		
-		onereadgroup.single->open(outdirs.c_str(), ios::out);
-		onereadgroup.singlef=onereadgroup.single;
-		
-		if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
+		if(fastqoutfileb){
+
+		    string outdirs   = fastqoutfilese;
+		    string outdirsf  = fastqoutfilesef;
+		    
+		    onereadgroup.single  = new ogzstream();
+		    onereadgroup.singlef = new ogzstream();
+		    
+		    onereadgroup.single->open(outdirs.c_str(), ios::out);
+		    onereadgroup.singlef->open(outdirsf.c_str(), ios::out);
+		    
+		    if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
+		    if(!onereadgroup.singlef->good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
+
+		}else{
+		    string outdirs   = intfastqoutfile;		
+		    onereadgroup.single->open(outdirs.c_str(), ios::out);
+		    onereadgroup.singlef=onereadgroup.single;
+		    
+		    if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
+		}
 	    }
 	    
 	}else{
+	    
 	    fqp1 = new FastQParser (fastqfile1);
 	    fqp2 = new FastQParser (fastqfile2);
+
 	    if(!fastqoutfile.empty()){
 
 		string outdirs   = fastqoutfile+".fq.gz";
@@ -2265,19 +2395,58 @@ int main (int argc, char *argv[]) {
 		if(!onereadgroup.singlef->good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
 		if(!onereadgroup.pairr1f->good()){      cerr<<"Cannot write to file "<<outdir1f<<endl; return 1; }
 		if(!onereadgroup.pairr2f->good()){      cerr<<"Cannot write to file "<<outdir2f<<endl; return 1; }
+
 	    }else{
-		string outdirs   = intfastqoutfile;
-		onereadgroup.single  = new ogzstream();
 
-		onereadgroup.single->open(outdirs.c_str(), ios::out);
+		if(fastqoutfileb){
 
-		onereadgroup.pairr1 =onereadgroup.single;
-		onereadgroup.pairr2 =onereadgroup.single;
-		onereadgroup.singlef=onereadgroup.single;
-		onereadgroup.pairr1f=onereadgroup.single;
-		onereadgroup.pairr2f=onereadgroup.single;
+		    string outdirs   = fastqoutfilese;
+		    string outdir1   = fastqoutfilepe1;
+		    string outdir2   = fastqoutfilepe2;
+		    
+		    string outdirsf  = fastqoutfilesef;
+		    string outdir1f  = fastqoutfilepe1f;
+		    string outdir2f  = fastqoutfilepe2f;
+		    
+		    onereadgroup.single  = new ogzstream();
+		    onereadgroup.pairr1  = new ogzstream();
+		    onereadgroup.pairr2  = new ogzstream();
+		    
+		    onereadgroup.singlef = new ogzstream();
+		    onereadgroup.pairr1f = new ogzstream();
+		    onereadgroup.pairr2f = new ogzstream();
 		
-		if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
+		    onereadgroup.single->open(outdirs.c_str(), ios::out);
+		    onereadgroup.pairr1->open(outdir1.c_str(), ios::out);
+		    onereadgroup.pairr2->open(outdir2.c_str(), ios::out);
+
+		    onereadgroup.singlef->open(outdirsf.c_str(), ios::out);
+		    onereadgroup.pairr1f->open(outdir1f.c_str(), ios::out);
+		    onereadgroup.pairr2f->open(outdir2f.c_str(), ios::out);
+
+		    if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl;  return 1; }
+		    if(!onereadgroup.pairr1->good()){       cerr<<"Cannot write to file "<<outdir1<<endl;  return 1; }
+		    if(!onereadgroup.pairr2->good()){       cerr<<"Cannot write to file "<<outdir2<<endl;  return 1; }
+		    
+		    if(!onereadgroup.singlef->good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
+		    if(!onereadgroup.pairr1f->good()){      cerr<<"Cannot write to file "<<outdir1f<<endl; return 1; }
+		    if(!onereadgroup.pairr2f->good()){      cerr<<"Cannot write to file "<<outdir2f<<endl; return 1; }
+		    
+		}else{
+		    
+		    string outdirs   = intfastqoutfile;
+		    onereadgroup.single  = new ogzstream();
+		    
+		    onereadgroup.single->open(outdirs.c_str(), ios::out);
+		    
+		    onereadgroup.pairr1 =onereadgroup.single;
+		    onereadgroup.pairr2 =onereadgroup.single;
+		    onereadgroup.singlef=onereadgroup.single;
+		    onereadgroup.pairr1f=onereadgroup.single;
+		    onereadgroup.pairr2f=onereadgroup.single;
+		    
+		    if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
+		}
 	    }
 	}
 

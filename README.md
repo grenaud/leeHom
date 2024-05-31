@@ -145,3 +145,11 @@ src/leeHom -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG -
 ```
 
 The output files will have the `testData/outfq*` prefix.
+
+Alternatively, you can specify the names of all 6 files:
+
+```bash
+src/leeHom -f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG --ancientdna -fq1 testData/rawAncientDNA.f1.gz -fq2 testData/rawAncientDNA.f2.gz -fqose testData/outfq.fq.gz -fqosef testData/outfq.fail.fq.gz -fqope1 testData/outfq_r1.fq.gz -fqope1f testData/outfq_r1.fail.fq.gz -fqope2 testData/outfq_r2.fq.gz -fqope2f testData/outfq_r2.fail.fq.gz
+```
+
+
