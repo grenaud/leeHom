@@ -13,8 +13,7 @@ Go to https://github.com/grenaud/leeHom and do one of the following:
 2. [Download the ZIP archive](https://github.com/grenaud/leeHom/archive/master.zip) and then manually download the submodules
 
 ## Installation:
-Make sure you have `cmake` installed. If required, install it by
-typing `apt-get install cmake` for Ubuntu for example.
+Make sure you have `cmake` installed. If required, install it by typing `apt-get install cmake` for Ubuntu for example. You also need JsonCpp which can be installed via `apt-get install libjsoncpp-dev`
 
 1. Build the submodules and main code by typing :
    
@@ -27,10 +26,6 @@ To launch the program simply type:
 src/leeHom
 ```
 
-or for if you have a multi-core machine, you can use them using the `-t` option in the following multi-threaded program:
-```
-src/leeHomMulti
-```
 
 
 
