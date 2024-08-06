@@ -8,14 +8,14 @@ ifdef BAMTOOLSINC
 	BAMTOOLSINCAPI=${BAMTOOLSINC}
 	BAMTOOLSINCSHARED=${BAMTOOLSINC}
 else
-	BAMTOOLSINCAPI=${BAMTOOLS}/src/
+	BAMTOOLSINCAPI=${BAMTOOLS}/build/src/
 	BAMTOOLSINCSHARED=${BAMTOOLS}/src/
 endif
 
 ifdef BAMTOOLSLIB
 	BAMTOOLSLIBOBJ=${BAMTOOLSLIB}/libbamtools.a 
 else
-	BAMTOOLSLIBOBJ=${BAMTOOLS}/build/src/api/libbamtools.a 
+	BAMTOOLSLIBOBJ=${BAMTOOLS}/build/src/libbamtools.a 
 endif
 
 ifdef LIBGABINC
@@ -79,7 +79,7 @@ ${BAMTOOLSINCAPI}/api/BamAlignment.h:
 	@echo ${BAMTOOLSLIBOBJ}
 	rm -rf ../bamtools/
 	mkdir ../bamtools/
-	git clone --recursive https://github.com/pezmaster31/bamtools.git ../bamtools/ && cd ../bamtools/ && git reset --hard d24d850de17134fe4e7984b26493c5c0a1844b35
+	git clone --recursive https://github.com/pezmaster31/bamtools.git ../bamtools/ && cd ../bamtools/ #&& git reset --hard d24d850de17134fe4e7984b26493c5c0a1844b35
 
 ${BAMTOOLSLIBOBJ}: ${BAMTOOLSINCAPI}/api/BamAlignment.h
 	cd ../bamtools/ &&  mkdir -p build/  && cd build/ && if cmake ..; then echo ""; else if cmake3 ..; then echo ""; else echo "cmake failed, please install cmake v3"; fi  fi  && make && cd ../..
