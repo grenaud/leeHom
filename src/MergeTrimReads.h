@@ -11,18 +11,14 @@
 #include <math.h>
 #include <sys/time.h>
 
-#include <api/SamHeader.h>
-#include <api/BamMultiReader.h>
-#include <api/BamReader.h>
-#include <api/BamWriter.h>
-#include <api/BamAlignment.h>
-#include <api/BamAux.h>
+#include <stdint.h>
 /* #include <boost/math/distributions/lognormal.hpp> */
 
 #include "libgab.h"
+#include "Kernels.h"
+#include "BamRecord.h"
 
 using namespace std;
-using namespace BamTools;
 /* using namespace boost::math; */
 
 #define MAXLENGTHSEQUENCE 1000 //should be good for a few years for Illumina at least ...
@@ -88,6 +84,11 @@ class MergeTrimReads{
 
     unsigned int seed;
     bool seedSpecified;
+
+    //random numbers (used to break ties), see setRandomContext()
+    uint64_t baseSeed;
+    uint64_t rngState;
+    bool     legacyRng;     //use the global rand(), results then depend on the order in which reads are processed
 
     /* //  Key variables /// */
     bool handle_key;
@@ -156,6 +157,13 @@ class MergeTrimReads{
     double likeRandomMisMatchProb; // 3/4
 
     double newprob[5][5][64+MAXQCSCORE][64+MAXQCSCORE];
+
+    //combined tables for the vectorized kernels, see Kernels.h
+    double adapterTab[2*(64+MAXQCSCORE)];
+    double overlapTab[(64+MAXQCSCORE)*2*(64+MAXQCSCORE)];
+    int    quickBases;
+    double quickFraction;
+    bool   referenceKernels;      //use the original one-candidate-at-a-time code (for verification)
     
 
     //prior dist
@@ -200,6 +208,11 @@ class MergeTrimReads{
 			  unsigned int      offsetRead=0,				    
 			  //double *          iterations =0 ,
 			  int  *            matches=0);
+    double measureOverlapQuick(const string & read1,
+			       const string & qual1,
+			       const string & read2,
+			       const string & qual2,
+			       unsigned int   offsetRead);
     double detectAdapter(const string      & read,
 			 const string      & qual,
 			 const string      & adapterString,
@@ -227,6 +240,14 @@ class MergeTrimReads{
 				     int &    logLikelihoodTotalIdx,
 				     double & sndlogLikelihoodTotal,
 				     int &    sndlogLikelihoodTotalIdx);
+    void computeBestLikelihoodSingleReference(const string      & read1,
+					      const string      & qualv1,
+					      double & logLikelihoodTotal,
+					      int &    logLikelihoodTotalIdx,
+					      double & sndlogLikelihoodTotal,
+					      int &    sndlogLikelihoodTotalIdx);
+    leehom::KernelTables kernelTables() const;
+    leehom::ChimeraLanes chimeraLanes;     //adapter_chimeras laid out for the vectorized kernel
 
     void computeBestLikelihoodPairedEnd(const string &      read1,
 					const string &      qualv1,
@@ -250,6 +271,28 @@ class MergeTrimReads{
 					int    & sndlogLikelihoodTotalMatches);
 
 
+    int countMatchesPE(const string & read1, const string & qualv1,
+		       const string & read2, const string & qualv2,
+		       const string & read2_rev, const string & qualv2_rev,
+		       const int & lengthRead1, const int & lengthRead2, const int & maxLengthForPair,
+		       int indexAdapter);
+
+    void computeBestLikelihoodPairedEndReference(const string &      read1,
+						 const string &      qualv1,
+						 const string &      read2,
+						 const string &      qualv2,
+						 const string &      read2_rev,
+						 const string &      qualv2_rev,
+						 const int & lengthRead1,
+						 const int & lengthRead2,
+						 const int & maxLengthForPair,
+						 double & logLikelihoodTotal,
+						 int    & logLikelihoodTotalIdx,
+						 int    & logLikelihoodTotalMatches,
+						 double & sndlogLikelihoodTotal,
+						 int    & sndlogLikelihoodTotalIdx,
+						 int    & sndlogLikelihoodTotalMatches);
+
     void computeConsensusPairedEnd( const string & read1,
 				    const string & qualv1,
 					
@@ -270,7 +313,7 @@ class MergeTrimReads{
 
 
     string sortUniqueChar(string v);
-    bool set_extra_flag( BamAlignment &al, int32_t f );
+    bool set_extra_flag( BamRecord &al, int32_t f );
 
     const string MERGEDBAMFLAG ;
     const int32_t TRIMMEDFLAG       ;
@@ -293,8 +336,8 @@ class MergeTrimReads{
     double scale;
     bool   useDist;
     //lognormal_distribution<> p;
-    void bamAlgnToString( BamAlignment & al ,
-			  BamAlignment & al2,
+    void bamAlgnToString( BamRecord & al ,
+			  BamRecord & al2,
 			  string & read1,
 			  string & read2,
 			  string & qual1,
@@ -313,24 +356,62 @@ class MergeTrimReads{
 		    const int    qualOffset=33,
 		    const unsigned int seed=0,const bool seedSpecified=false);
 
-    MergeTrimReads(const MergeTrimReads & other);
     ~MergeTrimReads();
-    MergeTrimReads & operator= (const MergeTrimReads & other);
     
     merged process_PE(string  read1,string  qual1,string read2,string qual2);
     merged process_SR(string  read1, string qual1);
 
+    /*!
+      Sets the state of the random number generator from the index of the cluster about to be processed.
+      The random numbers drawn for a given cluster then only depend on the seed and on that index, so the
+      results are the same whatever the number of threads or the way reads are split into chunks.
+    */
+    void setRandomContext(uint64_t clusterIndex);
+
+    //! Adds the counts of another object (used to combine the counts of the threads)
+    void addCounts(const MergeTrimReads & other);
+
+    /*!
+      For verification only: the log-likelihood (before the prior) and the number of matches for every
+      candidate position of the adapter, with either the original scalar code (reference=true) or the
+      vectorized kernels. Both must give exactly the same values.
+    */
+    void debugLikelihoodsPE(const string & read1, const string & qual1,
+			    const string & read2, const string & qual2,
+			    bool reference, vector<double> & ll);
+    void debugLikelihoodsSR(const string & read1, const string & qual1,
+			    bool reference, vector<double> & ll);
+    /*!
+      For verification only: what the search for the most likely adapter index returns for a read pair (best and second
+      best log-likelihood after the prior, their index and number of matches), with the original or the vectorized code.
+    */
+    void debugChimera(const string & read1, const string & qual1, bool reference, vector<double> & out);
+    void debugBestPE(const string & read1, const string & qual1,
+		     const string & read2, const string & qual2,
+		     bool reference,
+		     double & best, int & bestIdx, int & bestMatches,
+		     double & second, int & secondIdx, int & secondMatches);
+
+    /*!
+      Quick mode: a candidate adapter position whose overlap likelihood, after bases compared bases, is below what
+      random sequences would give is not computed any further (0 turns it off). See Kernels.h.
+    */
+    void setQuick(int bases, double fraction = 0.4){ quickBases = (bases > 0) ? bases : 0; quickFraction = fraction; }
+
+    //! Use the original scalar likelihood code instead of the vectorized kernels (same results, slower)
+    void setReferenceKernels(bool b){ referenceKernels = b; }
+
     void setFadapter(const string& forward_);
     void setRadapter(const string& reverse_);
 		    
-    /* pair<BamAlignment,BamAlignment> processPair(const BamAlignment & al,const BamAlignment & al2); */
-    /* BamAlignment                    processSingle(const BamAlignment & al); */
+    /* pair<BamRecord,BamRecord> processPair(const BamRecord & al,const BamRecord & al2); */
+    /* BamRecord                    processSingle(const BamRecord & al); */
     string mlConsensus(vector<string> & adapterSeqs, vector< string  > & qualadaptSeq,const float threshold=0.99);
     void inferadaptPairFQ(fqrecord & fr, vector<string> & adapterSeqs_fwd, vector< string  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< string > & qualadaptSeq_rev);
 
-    void inferadaptPairBAM(   BamAlignment & al , BamAlignment & al2,vector<string> & adapterSeqs_fwd, vector< string  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< string  > & qualadaptSeq_rev);
-    bool processPair(   BamAlignment & al , BamAlignment & al2);
-    void processSingle( BamAlignment & al );
+    void inferadaptPairBAM(   BamRecord & al , BamRecord & al2,vector<string> & adapterSeqs_fwd, vector< string  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< string  > & qualadaptSeq_rev);
+    bool processPair(   BamRecord & al , BamRecord & al2);
+    void processSingle( BamRecord & al );
 
     string reportSingleLine();
     string reportMultipleLines();

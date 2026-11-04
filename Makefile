@@ -1,5 +1,4 @@
 #main
-BAMTOOLS= $(realpath bamtools/)
 LIBGAB= $(realpath  libgab/)
 
 PASSVARIABLES=
@@ -12,12 +11,12 @@ ifdef LDFLAGS
 	PASSVARIABLES+= LDFLAGS="${LDFLAGS}" 
 endif
 
-ifdef BAMTOOLSINC
-	PASSVARIABLES+= BAMTOOLSINC="${BAMTOOLSINC}" 
+ifdef HTSLIBINC
+	PASSVARIABLES+= HTSLIBINC="${HTSLIBINC}" 
 endif
 
-ifdef BAMTOOLSLIB
-	PASSVARIABLES+= BAMTOOLSLIB="${BAMTOOLSLIB}" 
+ifdef HTSLIBLIB
+	PASSVARIABLES+= HTSLIBLIB="${HTSLIBLIB}" 
 endif
 
 ifdef LIBGABINC
@@ -46,6 +45,7 @@ clean:
 	make -C src clean
 
 test:   all
+	make  CXX="${CXX}" ${PASSVARIABLES}  -C src fuzz_kernels
 	cd test/ && bash test.sh && cd ..
 
 .PHONY: all

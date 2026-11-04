@@ -1,54 +1,40 @@
 #include <iostream>
 #include <fstream>
-#include <queue>
+#include <thread>
+#include <mutex>
+#include <vector>
+#include <string>
+#include <cstdio>
+#include <cstring>
+#include <time.h>
 
-#include <api/SamHeader.h>
-#include <api/BamMultiReader.h>
-#include <api/BamReader.h>
-#include <api/BamWriter.h>
-#include <api/BamAux.h>
+#include <zlib.h>
+
+#include <htslib/hts.h>
+#include <htslib/sam.h>
+
 #include "MergeTrimReads.h"
-#include "PutProgramInHeader.h"
+#include "PutProgramInHeaderHTS.h"
 #include "FastQParser.h"
+#include "BamRecord.h"
+#include "Pipeline.h"
 
 #include "libgab.h"
 #include "version.h"
 
-//TODO char qualscore to like
-
-//#define DEBUG 
-
-
-//#define DEBUGMEM
-
-#ifdef DEBUG
-#define DEBUGSLEEPING
-#endif
-
-//#define DEBUGSLEEPING
 using namespace std;
-using namespace BamTools;
 
-typedef struct { 
-    ogzstream * single;
-    ogzstream * pairr1;
-    ogzstream * pairr2;
+/*
+  Overview:
 
-    ogzstream * singlef;
-    ogzstream * pairr1f;
-    ogzstream * pairr2f;
+  The main thread reads the input (BAM or fastq) and cuts it into chunks. A chunk is a few thousand reads/clusters.
+  Several worker threads process the chunks, each one with its own MergeTrimReads object, and a writer
+  thread writes the results. The chunks are written in the order in which they were read (see OrderedPipeline),
+  hence the output is in the same order as the input whatever the number of threads.
 
-} fqwriters;
-
-
-struct argspthread {
-    bool  keepOrig;
-    bool  singleEndModeFQ;
-    unsigned int umif;
-    unsigned int umir;
-    unsigned int umtf;
-    unsigned int umtr;
-};
+  For BAM the compression/decompression is done by htslib's thread pool; for fastq the workers compress
+  the text of their chunk as an independent gzip member (a concatenation of gzip members is a valid gzip file).
+*/
 
 // https://samtools.github.io/hts-specs/SAMtags.pdf
 // RX:Z:sequence+ Sequence bases from the unique molecular identifier. These could be either corrected or
@@ -70,483 +56,287 @@ string options_adapter_F_BAM="AGATCGGAAGAGCACACGTCTGAACTCCAGTCACIIIIIIIATCTCGTAT
 string options_adapter_S_BAM="AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGATCTCGGTGGTCGCCGTATCATTT";
 string options_adapter_chimera_BAM="ACACTCTTTCCCTACACGTCTGAACTCCAG,ACACTCTTTCCCACACGTCTGAACTCCAGT,ACACTCTTTCCCTACACACGTCTGAACTCC,CTCTTTCCCTACACGTCTGAACTCCAGTCA,GAAGAGCACACGTCTGAACTCCAGTCACII,GAGCACACGTCTGAACTCCAGTCACIIIII,GATCGGAAGAGCACACGTCTGAACTCCAGT,AGATCGGAAGAGCACACGTCTGAACTCCAG,AGAGCACACGTCTGAACTCCAGTCACIIII,ACACGTCTGAACTCCAGTCACIIIIIIIAT,GTGCACACGTCTGAACTCCAGTCACIIIII,AGCACACGTCTGAACTCCAGTCACIIIIII,CGTATGCCGTCTTCTGCTTGAAAAAAAAAA";
 
-pthread_mutex_t  mutexCERR    = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t  mutexQueue   = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t  mutexCounter = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t  mutexRank    = PTHREAD_MUTEX_INITIALIZER;
-
-
-//! Chunk of code to check if a certain thread call failed
-/*!
-  This block is calls by the pthread
-
-
-*/				
-#define checkResults(string, val) {             \
- if (val) {                                     \
-     cerr<<"Failed with "<<val<<" at "<<string<<endl;	\
-   exit(1);                                     \
- }                                              \
-}
- 
-
-
-inline bool isBamAlignEmpty(const BamAlignment & toTest){
-    return ( toTest.Name.empty() &&
-	     toTest.Length == 0 );    
-}
-
-
-
-
-//BAM
-class DataChunk{
-private:
-    
-public:
-    vector<BamAlignment>  * dataToProcess;    
-    int rank;
-
-    // DataChunk();
-    DataChunk(int rank_m);
-    DataChunk(const DataChunk & other);
-    ~DataChunk();
-    DataChunk & operator= (const DataChunk & other);
-};
-
-
-DataChunk::DataChunk(int rank_m){
-    rank =  rank_m;
-    dataToProcess = new vector<BamAlignment>() ;    
-
-#ifdef DEBUGMEM
-    int rc = pthread_mutex_lock(&mutexCERR);
-    checkResults("pthread_mutex_lock()\n", rc);
-
-    cerr<<"Constructor addr: "<<this<<" rank "<<rank<<endl;
-
-    rc = pthread_mutex_unlock(&mutexCERR);
-    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-}
-
-
-DataChunk::~DataChunk(){
-    delete dataToProcess;
-
-#ifdef DEBUGMEM
-    int rc = pthread_mutex_lock(&mutexCERR);
-    checkResults("pthread_mutex_lock()\n", rc);
-    
-    cerr<<"Destructor  addr: "<<this<<" rank "<<rank<<endl;
-
-    rc = pthread_mutex_unlock(&mutexCERR);
-    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-}
-
-class CompareDataChunk {
-public:
-    bool operator() ( DataChunk * cd1, DataChunk * cd2)  {
-        //comparison code here
-	return ( cd1->rank > cd2->rank );
-    }
-};
-
-
-queue< DataChunk * >                                               queueDataToprocess;
-priority_queue<DataChunk *, vector<DataChunk *>, CompareDataChunk > queueDataTowrite;
-
-//fq
-
-class DataChunkFQ{
-private:
-    
-public:
-    vector<fqrecord>  * dataToProcess;    
-    int rank;
-
-    // DataChunk();
-    DataChunkFQ(int rank_m);
-    DataChunkFQ(const DataChunkFQ & other);
-    ~DataChunkFQ();
-    DataChunkFQ & operator= (const DataChunkFQ & other);
-};
-
-
-DataChunkFQ::DataChunkFQ(int rank_m){
-    rank =  rank_m;
-    dataToProcess = new vector<fqrecord>() ;    
-
-#ifdef DEBUGMEM
-    int rc = pthread_mutex_lock(&mutexCERR);
-    checkResults("pthread_mutex_lock()\n", rc);
-
-    cerr<<"Constructor addr: "<<this<<" rank "<<rank<<endl;
-
-    rc = pthread_mutex_unlock(&mutexCERR);
-    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-}
-
-
-DataChunkFQ::~DataChunkFQ(){
-    delete dataToProcess;
-
-#ifdef DEBUGMEM
-    int rc = pthread_mutex_lock(&mutexCERR);
-    checkResults("pthread_mutex_lock()\n", rc);
-
-    cerr<<"Destructor  addr: "<<this<<" rank "<<rank<<endl;    
-
-    rc = pthread_mutex_unlock(&mutexCERR);
-    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-}
-
-class CompareDataChunkFQ {
-public:
-    bool operator() ( DataChunkFQ * cd1, DataChunkFQ * cd2)  {
-        //comparison code here
-	return ( cd1->rank > cd2->rank );
-    }
-};
-
-
-queue< DataChunkFQ * >                                                  queueDataToprocessFQ;
-priority_queue<DataChunkFQ *, vector<DataChunkFQ *>, CompareDataChunkFQ > queueDataTowriteFQ;
-
-
-
-
-
-//GLOBALLY accessed
-int maxQueueDataTowriteSize  =10;
-int maxQueueDataToprocessSize=10;
-
-int    timeThreadSleep = 1;
-bool      readDataDone = false;
 unsigned int sizeChunkDefault = 5000;
 unsigned int sizeChunk        = 5000;
-
-int numberOfThreads=1;
-
-map<unsigned int, int>       threadID2Rank;
+int          numberOfThreads  = 1;
 
 
+//! Everything the run functions need to know, filled by main()
+struct Settings {
+    int          gzLevel;     //compression level of the output, -1: default
+    bool         keepOrig;
+    unsigned int umif;
+    unsigned int umir;
+    unsigned int umiTf;
+    unsigned int umiTr;
+    bool         detectAdapt;
+    bool         trimKey;
+    string       key1;
+    string       key2;
+    bool         printLog;
+    string       logFileName;
+
+    //BAM
+    bool         allowAligned;
+    bool         produceUnCompressedBAM;
+    string       bamFile;
+    string       bamFileOUT;
+    bool         fastqToBam;        //fastq input, BAM output
+    int          fqQualOffset;      //offset of the qualities of the fastq input
+
+    //fastq
+    bool         singleEndModeFQ;
+    string       fastqfile1;
+    string       fastqfile2;
+    string       fastqoutfile;
+    bool         fastqoutfileb;
+    string       fastqoutfilese;
+    string       fastqoutfilesef;
+    string       fastqoutfilepe1;
+    string       fastqoutfilepe1f;
+    string       fastqoutfilepe2;
+    string       fastqoutfilepe2f;
+    string       intfastqoutfile;
+    //the output stream (single, pair 1, pair 2, failed single, failed pair 1, failed pair 2) -> file
+    int          sidx[6];
+};
+
+enum { S_SINGLE=0, S_PAIR1=1, S_PAIR2=2, S_SINGLEF=3, S_PAIR1F=4, S_PAIR2F=5 };
 
 
+//! A chunk of BAM records, the output chunks have the same type
+struct BamChunk {
+    uint64_t         firstRecord;     //index in the input of the first record
+    vector<bam1_t *> recs;
 
-
-void forceInsertProcedure(DataChunk * chunkToWrite,int rankThread){
-    int   rc;
-    //---> mutex counter is taken here <---
-
- forceinsertinit:
-    //need to insert chunkToWrite
-    
-    if(int(queueDataTowrite.size())>(maxQueueDataTowriteSize)){	  // if queue full
-	//---> mutex counter is taken here <---
-
-	if(chunkToWrite->rank <  queueDataTowrite.top()->rank){  //if my current chunk out ranks the first one, need to insert
-	    
-#ifdef DEBUGSLEEPING
-	    rc = pthread_mutex_lock(&mutexCERR);
-	    checkResults("pthread_mutex_lock()\n", rc);	       
-	    cerr<<"Thread #"<<rankThread<<" queue is full with "<<int(queueDataTowrite.size())<<" force insert, current rank "<<chunkToWrite->rank<<" top rank "<<queueDataTowrite.top()->rank<<", sleeping for "<<timeThreadSleep<<"s"<<endl;
-	    rc = pthread_mutex_unlock(&mutexCERR);
-	    checkResults("pthread_mutex_unlock()\n", rc);     
-#endif
-
-	    DataChunk *  tempDataChunk = queueDataTowrite.top();
-	    queueDataTowrite.pop();
-	    queueDataTowrite.push(chunkToWrite);
-
-	    //release mutex and sleep
-	    rc = pthread_mutex_unlock(&mutexCounter);
-	    checkResults("pthread_mutex_unlock()\n", rc);	
-		
-	    sleep(timeThreadSleep);
-	    
-	    chunkToWrite=tempDataChunk;
-
-	    //take mutex
-	    rc = pthread_mutex_lock(&mutexCounter);
-	    checkResults("pthread_mutex_lock()\n", rc);
-	    goto forceinsertinit;
-	}else{//if the currentChunk does not outrank the one on top
-
-#ifdef DEBUGSLEEPING
-	    rc = pthread_mutex_lock(&mutexCERR);
-	    checkResults("pthread_mutex_lock()\n", rc);
-	       
-	    cerr<<"Thread #"<<rankThread<<" queue is full with "<<int(queueDataTowrite.size())<<" items, but does not outrank, current rank "<<chunkToWrite->rank<<" top rank "<<queueDataTowrite.top()->rank<<" sleeping for "<<timeThreadSleep<<endl;
-
-	    rc = pthread_mutex_unlock(&mutexCERR);
-	    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-	    //release mutex
-	    rc = pthread_mutex_unlock(&mutexCounter);
-	    checkResults("pthread_mutex_unlock()\n", rc);	
-		
-	    sleep(timeThreadSleep);
-	    //take mutex
-	    rc = pthread_mutex_lock(&mutexCounter);
-	    checkResults("pthread_mutex_lock()\n", rc);
-	    goto forceinsertinit;
-	}
-
-    }else{
-
-#ifdef DEBUG 
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);
-	cerr<<"Thread #"<<rankThread<<" force insert, enough space size= "<<int(queueDataTowrite.size())<<" inserting"<<endl;
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-	//we now insert it
-	
-	queueDataTowrite.push(chunkToWrite);
-
-	//release mutex
-	rc = pthread_mutex_unlock(&mutexCounter);
-	checkResults("pthread_mutex_unlock()\n", rc);	
-	return ;
+    BamChunk():firstRecord(0){}
+    ~BamChunk(){
+	for(size_t i=0;i<recs.size();i++)
+	    bam_destroy1(recs[i]);
     }
-       
+private:
+    BamChunk(const BamChunk &);
+    BamChunk & operator=(const BamChunk &);
+};
+
+//! A chunk of fastq records
+struct FqChunk {
+    uint64_t         firstRecord;
+    vector<fqrecord> recs;
+
+    FqChunk():firstRecord(0){}
+};
+
+//! The text to write to each of the output streams for a chunk, gzip compressed
+struct FqOutChunk {
+    string data[6];
+};
+
+
+//! Compresses in as a complete gzip member (header and trailer)
+static void gzipMember(const string & in, string & out, int level){
+    z_stream zs;
+    memset(&zs, 0, sizeof(zs));
+    if(deflateInit2(&zs, level, Z_DEFLATED, 15+16, 8, Z_DEFAULT_STRATEGY) != Z_OK){
+	cerr<<"Unable to initialize zlib"<<endl;
+	exit(1);
+    }
+    out.resize(deflateBound(&zs, in.size()));
+    zs.next_in   = (Bytef *) in.data();
+    zs.avail_in  = in.size();
+    zs.next_out  = (Bytef *) &out[0];
+    zs.avail_out = out.size();
+    if(deflate(&zs, Z_FINISH) != Z_STREAM_END){
+	cerr<<"Unable to compress the output"<<endl;
+	exit(1);
+    }
+    out.resize(zs.total_out);
+    deflateEnd(&zs);
 }
 
 
+//! CPU time used so far by the calling thread, in seconds
+static double threadCpuSeconds(){
+    struct timespec ts;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+    return double(ts.tv_sec) + double(ts.tv_nsec)*1e-9;
+}
 
-
-
-
-
-
-
-
-
-
-
-void forceInsertProcedureFQ(DataChunkFQ * chunkToWrite,int rankThread){
-    int   rc;
-    //---> mutex counter is taken here <---
-
- forceinsertinit:
-    //need to insert chunkToWrite
-    
-    if(int(queueDataTowriteFQ.size())>(maxQueueDataTowriteSize)){	  // if queue full
-	//---> mutex counter is taken here <---
-
-	if(chunkToWrite->rank <  queueDataTowriteFQ.top()->rank){  //if my current chunk out ranks the first one, need to insert
-	    
-#ifdef DEBUGSLEEPING
-	    rc = pthread_mutex_lock(&mutexCERR);
-	    checkResults("pthread_mutex_lock()\n", rc);
-	    cerr<<"Thread #"<<rankThread<<" queue is full with "<<int(queueDataTowriteFQ.size())<<" force insert, current rank "<<chunkToWrite->rank<<" top rank "<<queueDataTowriteFQ.top()->rank<<", sleeping for "<<timeThreadSleep<<"s"<<endl;
-	    rc = pthread_mutex_unlock(&mutexCERR);
-	    checkResults("pthread_mutex_unlock()\n", rc);     
-#endif
-
-	    DataChunkFQ *  tempDataChunk = queueDataTowriteFQ.top();
-	    queueDataTowriteFQ.pop();
-	    queueDataTowriteFQ.push(chunkToWrite);
-
-	    //release mutex and sleep
-	    rc = pthread_mutex_unlock(&mutexCounter);
-	    checkResults("pthread_mutex_unlock()\n", rc);	
-		
-	    sleep(timeThreadSleep);
-	    
-	    chunkToWrite=tempDataChunk;
-
-	    //take mutex
-	    rc = pthread_mutex_lock(&mutexCounter);
-	    checkResults("pthread_mutex_lock()\n", rc);
-	    goto forceinsertinit;
-	}else{//if the currentChunk does not outrank the one on top
-
-#ifdef DEBUGSLEEPING
-	    rc = pthread_mutex_lock(&mutexCERR);
-	    checkResults("pthread_mutex_lock()\n", rc);
-	       
-	    cerr<<"Thread #"<<rankThread<<" queue is full with "<<int(queueDataTowriteFQ.size())<<" items, but does not outrank, current rank "<<chunkToWrite->rank<<" top rank "<<queueDataTowriteFQ.top()->rank<<" sleeping for "<<timeThreadSleep<<"s"<<endl;
-
-	    rc = pthread_mutex_unlock(&mutexCERR);
-	    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-	    //release mutex
-	    rc = pthread_mutex_unlock(&mutexCounter);
-	    checkResults("pthread_mutex_unlock()\n", rc);	
-		
-	    sleep(timeThreadSleep);
-
-	    //take mutex
-	    rc = pthread_mutex_lock(&mutexCounter);
-	    checkResults("pthread_mutex_lock()\n", rc);
-	    goto forceinsertinit;
-	}
-
-    }else{
-
-#ifdef DEBUG 
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);
-	cerr<<"Thread #"<<rankThread<<" force insert, enough space size= "<<int(queueDataTowriteFQ.size())<<" inserting"<<endl;
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-	//we now insert it
-	
-	queueDataTowriteFQ.push(chunkToWrite);
-
-	//release mutex
-	rc = pthread_mutex_unlock(&mutexCounter);
-	checkResults("pthread_mutex_unlock()\n", rc);	
-	return ;
-    }
-       
+//! With LEEHOM_STATS set, the CPU time of each stage is reported at the end
+static mutex  statsMutex;
+static double statsReader = 0.0, statsWorkers = 0.0, statsWriter = 0.0;
+static bool   statsEnabled(){ static const bool b = (getenv("LEEHOM_STATS") != NULL); return b; }
+static void   statsAdd(double & where, double seconds){ lock_guard<mutex> lock(statsMutex); where += seconds; }
+static void   statsReport(){
+    if(statsEnabled())
+	cerr<<"CPU seconds: reading "<<statsReader<<", processing (all workers) "<<statsWorkers<<", writing "<<statsWriter<<endl;
 }
 
 
+static inline void fqPut(string & b, const string & head, const string & cmt, const string & seq, const string & qual){
+    b.append(head);
+    b.append(cmt);
+    b.push_back('\n');
+    b.append(seq);
+    b.append("\n+\n");
+    b.append(qual);
+    b.push_back('\n');
+}
 
 
+bool setPairedDetectAdapters(vector<string>         & adapterSeqs_fwd,
+			     vector<string> & qualadaptSeq_fwd,
+			     vector<string>         & adapterSeqs_rev,
+			     vector<string> & qualadaptSeq_rev){
 
-
-//! Method called for each thread BAM
-/*!
-  
-
-*/				
-void *mainComputationThread(void * argc){    
-    //bool * keepOrigAddr = (bool *)argc;
-    //bool   keepOrig     = *keepOrigAddr;
-
-    bool keepOrig = ((struct argspthread*)argc)->keepOrig;
-    unsigned int umif      = ((struct argspthread*)argc)->umif;
-    unsigned int umir      = ((struct argspthread*)argc)->umir;
-    unsigned int umtf      = ((struct argspthread*)argc)->umtf;
-    unsigned int umtr      = ((struct argspthread*)argc)->umtr;
-    bool umi      = ((umif+umir)>0);
-
+    //collecting the adapters
+    string fwd_adapt=mtr->mlConsensus(adapterSeqs_fwd,qualadaptSeq_fwd);
     
-    int   rc;
-    int rankThread=0;
+    float fwdIfrac;
+    int   fwdI=0;
+    for(unsigned int i=0;i<fwd_adapt.size();i++){	
+	if(fwd_adapt[i] == 'I'){
+	    fwdI++;
+	}
+    }
+    fwdIfrac = (float( fwdI) /float( fwd_adapt.size() ) );
+    float thresholdUndefined = 0.2;
 
-    rc = pthread_mutex_lock(&mutexRank);
-    checkResults("pthread_mutex_lock()\n", rc);
-
-    threadID2Rank[*(int *)pthread_self()]  = threadID2Rank.size()+1;
-    rankThread = threadID2Rank[*(int *)pthread_self()];
-
+    bool errorFound=false;
+    if(fwdIfrac < thresholdUndefined){
+	cerr<<"Inferred fwd adapter: "<<fwd_adapt<<endl;
+	mtr->setFadapter(fwd_adapt);
+    }else{
+	cerr<<"Cannot infer the forward adapter, only found "<<fwd_adapt<<" fraction undefined: "<<(fwdIfrac*100)<<"%"<<" threshold: "<<(thresholdUndefined*100)<<"%"<<endl;
+	errorFound=true;
+	//return false;
+    }
     
-    rc = pthread_mutex_unlock(&mutexRank);
-    checkResults("pthread_mutex_unlock()\n", rc);
+    string rev_adapt=mtr->mlConsensus(adapterSeqs_rev,qualadaptSeq_rev);
 
- checkqueue:    
-    // stackIndex=-1;
-    //check stack
-
-    
-    rc = pthread_mutex_lock(&mutexQueue);
-    checkResults("pthread_mutex_lock()\n", rc);
-
-
-    bool foundData=false;
-    
-    //cerr<<"Thread #"<<rankThread <<" started and is requesting data"<<endl;
-
-
-    DataChunk * currentChunk;
-
-
-    if(!queueDataToprocess.empty()){    
- 	foundData=true;
- 	currentChunk = queueDataToprocess.front();
- 	queueDataToprocess.pop();
-#ifdef DEBUG 
-
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);
-	
-	
-	cerr<<"Thread #"<<rankThread<<" is reading "<<currentChunk->rank<<endl;
-	
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);
-
-#endif
-	//cout<<"rank "<< &(currentChunk->dataToProcess) <<endl;
+    float revIfrac;
+    int   revI=0;
+    for(unsigned int i=0;i<rev_adapt.size();i++){	
+	if(rev_adapt[i] == 'I'){
+	    revI++;
+	}
+    }
+    revIfrac = (float( revI) /float( rev_adapt.size() ) );
+    if(revIfrac < thresholdUndefined){
+	cerr<<"Inferred rev adapter: "<<rev_adapt<<endl;
+	mtr->setRadapter(rev_adapt);		
+    }else{
+	cerr<<"Cannot infer the reverse adapter, only found "<<rev_adapt<<" fraction undefined: "<<(revIfrac*100)<<"%"<<" threshold: "<<(thresholdUndefined*100)<<"%"<<endl;
+	errorFound=true;
+	//return false;
     }
 
+    if(errorFound)
+	return false;
     
-  
+    return true;
 
-    if(!foundData){
-	rc = pthread_mutex_unlock(&mutexQueue);
-	checkResults("pthread_mutex_unlock()\n", rc);
+}
 
 
-	if(readDataDone){
-#ifdef DEBUG 
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);
+bool detectAdaptBAM(const BamChunk * currentChunk){
+
+    BamRecord al;
+    BamRecord al2;
+    bool al2Null=true;
+    vector<string> adapterSeqs_fwd;
+    vector<string> qualadaptSeq_fwd;
+    vector<string> adapterSeqs_rev;
+    vector<string> qualadaptSeq_rev;
+
+    //iterating over each record in the chunk
+    for(unsigned i=0;i<currentChunk->recs.size();i++){
 	
-	cerr<<"Thread #"<<rankThread<<" is done"<<endl;
-
+	al.fromBam(currentChunk->recs[i]);
 	
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);
-
-	
-#endif
-	    return NULL;	
+	if(al.IsPaired() && 
+	   al2Null ){
+	    al2=al;
+	    al2Null=false;
+	    continue;
 	}else{
+	    if(al.IsPaired() && 
+	       !al2Null){
+				
+		//bool  result =  mtr->processPair(al,al2);
+		mtr->inferadaptPairBAM(al ,al2,adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
+		
+	    }else{ 
 
-#ifdef DEBUGSLEEPING
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);	       
-	cerr<<"Thread #"<<rankThread<<" has not found data, sleeping for "<<timeThreadSleep<<endl;	
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);
-#endif
+		//mtr->processSingle(al);
+		cerr<<"The automatic detection of the adapters is not yet coded for single-end reads"<<endl;
+		exit(1);
+	    } //end single end
+	    al2Null=true;
+	}//second pair		    
 
-	    sleep(timeThreadSleep);
-	    goto checkqueue;
-	}
-
-    }else{
-	//release stack
-	rc = pthread_mutex_unlock(&mutexQueue);
-	checkResults("pthread_mutex_unlock()\n", rc);
     }
 
-    //////////////////////////////////////////////////////////////
-    //                BEGIN COMPUTATION                         //
-    //////////////////////////////////////////////////////////////
-    DataChunk * chunkToWrite = new DataChunk(currentChunk->rank);
+    return setPairedDetectAdapters(adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
+}
 
-    BamAlignment al;
-    BamAlignment al2;
-    BamAlignment orig;
-    BamAlignment orig2;
+
+bool detectAdaptFQ(const FqChunk * currentChunk){
+    fqrecord fr;
+
+    vector<string> adapterSeqs_fwd;
+    vector<string> qualadaptSeq_fwd;
+    vector<string> adapterSeqs_rev;
+    vector<string> qualadaptSeq_rev;
+
+    //iterating over each record in the chunk
+    for(unsigned i=0;i<currentChunk->recs.size();i++){
+	
+	fr = currentChunk->recs[i];
+	
+	if( fr.paired ){
+	    mtr->inferadaptPairFQ(fr,adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
+	}else{
+	    //mtr->processSingle(al);
+	    cerr<<"The automatic detection of the adapters is not yet coded for single-end reads"<<endl;
+	    exit(1);
+	}//second pair
+		    
+
+    }
+
+    return setPairedDetectAdapters(adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
+}
+
+
+//! Processes a chunk of BAM records
+static BamChunk * processBamChunk(MergeTrimReads * m, const Settings & S, const BamChunk & in){
+
+    const bool         keepOrig = S.keepOrig;
+    const unsigned int umif     = S.umif;
+    const unsigned int umir     = S.umir;
+    const unsigned int umtf     = S.umiTf;
+    const unsigned int umtr     = S.umiTr;
+    const bool         umi      = ((umif+umir)>0);
+
+    BamChunk * chunkToWrite = new BamChunk();
+    chunkToWrite->firstRecord = in.firstRecord;
+    chunkToWrite->recs.reserve(in.recs.size() + in.recs.size()/4);
+
+    BamRecord al;
+    BamRecord al2;
+    BamRecord orig;
+    BamRecord orig2;
     bool al2Null=true;
     string umifS;
     string umirS;
     string umifQ;
     string umirQ;
-    
-    
-    for(unsigned i=0;i<currentChunk->dataToProcess->size();i++){
+
+    //adds a record to the output
+    #define emit(rec) { bam1_t * bout = bam_init1(); (rec).toBam(bout); chunkToWrite->recs.push_back(bout); }
+
+    for(unsigned i=0;i<in.recs.size();i++){
 	//nonsense work
 	// int countIdentical=0;
 	// for(unsigned int j=0;j<currentChunk->dataToProcess[i].QueryBases.size();j++){
@@ -559,7 +349,7 @@ void *mainComputationThread(void * argc){
 	//     }
 	// }
 	
-	al = currentChunk->dataToProcess->at(i);
+	al.fromBam(in.recs[i]);
 	//cout<<rankThread<<" al  "<<al.Name<<" "<<al.IsFirstMate()<<endl;
 	//if(!al2Null)
 	//cout<<rankThread<<" al2 "<<al2.Name<<" "<<al2.IsFirstMate()<<endl;
@@ -577,7 +367,9 @@ void *mainComputationThread(void * argc){
 		    orig =al;
 		}
 
-		bool  result =  mtr->processPair(al,al2);
+		//fastq input: the same random choices as when writing fastq, where the index is that of the pair
+		m->setRandomContext( S.fastqToBam ? ((in.firstRecord + i)/2) : (in.firstRecord + i) );
+		bool  result =  m->processPair(al,al2);
 
 		if( result ){//was merged
 
@@ -629,7 +421,7 @@ void *mainComputationThread(void * argc){
 			}
 		    }
 		    
-		    chunkToWrite->dataToProcess->push_back(al);
+		    emit(al);
 		    //writer.SaveAlignment(al);
 		    
 		    if(keepOrig){
@@ -637,8 +429,8 @@ void *mainComputationThread(void * argc){
 			orig2.SetIsDuplicate(true);
 			// writer.SaveAlignment(orig2);
 			// writer.SaveAlignment(orig);
-			chunkToWrite->dataToProcess->push_back(orig2);
-			chunkToWrite->dataToProcess->push_back(orig);
+			emit(orig2);
+			emit(orig);
 		    }
 
 		    //the second record is empty
@@ -691,8 +483,8 @@ void *mainComputationThread(void * argc){
 		    
 		    // writer.SaveAlignment(al2);		    
 		    // writer.SaveAlignment(al);
-		    chunkToWrite->dataToProcess->push_back(al2);
-		    chunkToWrite->dataToProcess->push_back(al);
+		    emit(al2);
+		    emit(al);
 
 		}
 
@@ -706,14 +498,15 @@ void *mainComputationThread(void * argc){
 		    al.Name = al.Name+"_M";
 		}
 		unsigned int orgL=al.QueryBases.length();		
-		mtr->processSingle(al);
+		m->setRandomContext(in.firstRecord + i);
+		m->processSingle(al);
 		unsigned int newL=al.QueryBases.length();
 				
 		if(keepOrig){
 		    //write duplicate
 		    if(orgL  != newL){
 			orig.SetIsDuplicate(true);
-			chunkToWrite->dataToProcess->push_back(orig);
+			emit(orig);
 		    }
 		}
 		//if(!al.AddTag("RX","Z",umifS)){ cerr << "Error while editing tags for UMI:"<<umifS<<"#"<< endl;  exit(1); }
@@ -764,7 +557,7 @@ void *mainComputationThread(void * argc){
 		}
 
 		//writer.SaveAlignment(al);
-		chunkToWrite->dataToProcess->push_back(al);
+		emit(al);
 
 
 
@@ -775,221 +568,107 @@ void *mainComputationThread(void * argc){
 
     }
 
-
-	
-
-
-    ////cerr<<"Thread #"<<rankThread <<" is done with computations"<<endl;
-
-    //////////////////////////////////////////////////////////////
-    //                END   COMPUTATION                         //
-    //////////////////////////////////////////////////////////////
-#ifdef DEBUG    
-    int rankLastChunk = currentChunk->rank;
-#endif
-
-    delete currentChunk;//input chunk
-    //TO REMOVE
-    //int fakeSleep=int( 10*(1/double(rankThread)));
-    //COUNTERS
-
-#ifdef DEBUG    
-    rc = pthread_mutex_lock(&mutexCERR);
-    checkResults("pthread_mutex_lock()\n", rc);
-	       
-    //cerr<<"Thread #"<<rankThread <<" is done with computations, sleep "<<fakeSleep<<" rank produced "<<rankLastChunk<<endl;
-    cerr<<"Thread #"<<rankThread <<" is done with computations, rank produced "<<rankLastChunk<<endl;
-    //sleep(fakeSleep);
-    rc = pthread_mutex_unlock(&mutexCERR);
-    checkResults("pthread_mutex_unlock()\n", rc);     
-#endif
-
-    //take mutex    
-    rc = pthread_mutex_lock(&mutexCounter);
-    checkResults("pthread_mutex_lock()\n", rc);
-
-
-    //---> mutex is taken here <---
-
-    //if(int(queueDataTowrite.size())>(2*numberOfThreads)){	
-    //if queue is full
-    if(int(queueDataTowrite.size())>(maxQueueDataTowriteSize)){		
-
-	forceInsertProcedure(chunkToWrite,rankThread);
-
-    }else{// just insert it if there is space
-
-
-#ifdef DEBUG
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);
-	       
-	cerr<<"Thread #"<<rankThread<<" has space in queue, queue size= "<<int(queueDataTowrite.size())<<" rank of chunk="<<chunkToWrite->rank<<endl;
-
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);     
-#endif
-
-	queueDataTowrite.push(chunkToWrite);
-	//release mutex
-	rc = pthread_mutex_unlock(&mutexCounter);
-	checkResults("pthread_mutex_unlock()\n", rc);	
-
-
-    }
-    
-#ifdef DEBUG
-    rc = pthread_mutex_lock(&mutexCERR);
-    checkResults("pthread_mutex_lock()\n", rc);
-    
-    cerr<<"Thread #"<<rankThread <<" is re-starting"<<endl;
-
-    rc = pthread_mutex_unlock(&mutexCERR);
-    checkResults("pthread_mutex_unlock()\n", rc);     
-#endif
-
-    goto checkqueue;	   
-
-
-    
-
-#ifdef DEBUG     
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);
-	       
-	cerr<<"Thread "<<rankThread<<" ended "<<endl;
-
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-    return NULL;
-
+    #undef emit
+    return chunkToWrite;
 }
 
 
+//! Processes a chunk of fastq records, returns the compressed text for each output file
+static FqOutChunk * processFqChunk(MergeTrimReads * m, const Settings & S, FqChunk & in){
 
+    const bool         singleEndModeFQ = S.singleEndModeFQ;
+    const unsigned int umif   = S.umif;
+    const unsigned int umir   = S.umir;
+    const unsigned int umtf   = S.umiTf;
+    const unsigned int umtr   = S.umiTr;
+    const bool         trimKey = S.trimKey;
+    const bool         umi    = ((umif+umir+umtf+umtr)>0);
 
+    string text[6];
 
-//! Method called for each thread FQ
-/*!
-  
-
-*/				
-void *mainComputationThreadFQ(void * argc){    
-    // bool * singleEndModeFQAddr = (bool *)argc;
-    // bool   singleEndModeFQ     = *singleEndModeFQAddr;
-
-    bool   singleEndModeFQ = ((struct argspthread*)argc)->singleEndModeFQ;
-    unsigned int    umif   = ((struct argspthread*)argc)->umif;
-    unsigned int    umir   = ((struct argspthread*)argc)->umir;
-    unsigned int    umtf   = ((struct argspthread*)argc)->umtf;
-    unsigned int    umtr   = ((struct argspthread*)argc)->umtr;
-
-    bool   umi             = ((umif+umir+umtf+umtr)>0);
-    
-    int   rc;
-    int rankThread=0;
-
-    rc = pthread_mutex_lock(&mutexRank);
-    checkResults("pthread_mutex_lock()\n", rc);
-
-    threadID2Rank[*(int *)pthread_self()]  = threadID2Rank.size()+1;
-    rankThread = threadID2Rank[*(int *)pthread_self()];
-
-    
-    rc = pthread_mutex_unlock(&mutexRank);
-    checkResults("pthread_mutex_unlock()\n", rc);
-
- checkqueue:    
-    // stackIndex=-1;
-    //check stack
-
-    
-    rc = pthread_mutex_lock(&mutexQueue);
-    checkResults("pthread_mutex_lock()\n", rc);
-
-
-    bool foundData=false;
-    
-    //cerr<<"Thread #"<<rankThread <<" started and is requesting data"<<endl;
-
-    DataChunkFQ * currentChunk;
-
-
-    if(!queueDataToprocessFQ.empty()){    
- 	foundData=true;
- 	currentChunk = queueDataToprocessFQ.front();
- 	queueDataToprocessFQ.pop();
-
-#ifdef DEBUG 
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);
-		
-	cerr<<"Thread #"<<rankThread<<" is reading "<<currentChunk->rank<<" with size "<<currentChunk->dataToProcess->size()<<endl;
-	
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-	//cout<<"rank "<< &(currentChunk->dataToProcess) <<endl;
-    }
-
-    
-  
-
-    if(!foundData){
-	rc = pthread_mutex_unlock(&mutexQueue);
-	checkResults("pthread_mutex_unlock()\n", rc);
-
-
-	if(readDataDone){
-
-#ifdef DEBUG 
-	    rc = pthread_mutex_lock(&mutexCERR);
-	    checkResults("pthread_mutex_lock()\n", rc);
-	    
-	    cerr<<"Thread #"<<rankThread<<" is done"<<endl;
-	
-	    rc = pthread_mutex_unlock(&mutexCERR);
-	    checkResults("pthread_mutex_unlock()\n", rc);	
-#endif
-
-	    return NULL;
-	}else{
-
-#ifdef DEBUGSLEEPING
-	    rc = pthread_mutex_lock(&mutexCERR);
-	    checkResults("pthread_mutex_lock()\n", rc);	    
-	    cerr<<"Thread #"<<rankThread<<" has not found data, sleeping for "<<timeThreadSleep<<"s"<<endl;	    
-	    rc = pthread_mutex_unlock(&mutexCERR);
-	    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-	    sleep(timeThreadSleep);
-	    goto checkqueue;
-	}
-
-    }else{
-	//release stack
-	rc = pthread_mutex_unlock(&mutexQueue);
-	checkResults("pthread_mutex_unlock()\n", rc);
-    }
-
-    //////////////////////////////////////////////////////////////
-    //                BEGIN COMPUTATION                         //
-    //////////////////////////////////////////////////////////////
-    DataChunkFQ * chunkToWrite = new DataChunkFQ(currentChunk->rank);
     string umifS;
     string umirS;
     string umifQ;
     string umirQ;
-    
     string cmt;
-    // if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence			    
-    
-    
-    for(unsigned i=0;i<currentChunk->dataToProcess->size();i++){
-	//cerr<<"process "<<currentChunk->dataToProcess->at(i).d1<<endl;
+
+    //formats a processed record, and tallies what happened to it
+    #define emitFq(r) {                                                                                           \
+	const fqrecord & rr = (r);                                                                                \
+	if(rr.paired){                                                                                            \
+	    m->incrementCountall();                                                                               \
+	    if(rr.code != ' '){ /*keys or chimeras*/                                                              \
+		if(rr.code == 'K'){                                                                               \
+		    m->incrementCountfkey();                                                                      \
+		}else{                                                                                            \
+		    if(rr.code == 'D'){                                                                           \
+			m->incrementCountchimera();                                                               \
+		    }else{                                                                                        \
+			if(rr.code == 'U'){ /*UMI problem, sequence is too short*/                                \
+			    m->incrementCountUMIp();                                                              \
+			}else{                                                                                    \
+			    cerr << "leehom: Wrong return code =\""<<rr.code<<"\""<<endl;                         \
+			    exit(1);                                                                              \
+			}                                                                                         \
+		    }                                                                                             \
+		}                                                                                                 \
+		fqPut(text[S.sidx[S_PAIR1F]], "@"+rr.d1+"/1", rr.cmt, rr.s1, rr.q1);                              \
+		fqPut(text[S.sidx[S_PAIR2F]], "@"+rr.d2+"/2", rr.cmt, rr.s2, rr.q2);                              \
+	    }else{                                                                                                \
+		if(rr.sequence != ""){ /*new sequence*/                                                           \
+		    fqPut(text[S.sidx[S_SINGLE]], "@"+rr.d1, rr.cmt, rr.sequence, rr.quality);                    \
+		    if( (rr.sequence.length()+umif+umir+umtf+umtr) > max(rr.s1.length(),rr.s2.length()) ){        \
+			m->incrementCountmergedoverlap();                                                         \
+		    }else{                                                                                        \
+			m->incrementCountmerged();                                                                \
+		    }                                                                                             \
+		}else{ /*keep as is*/                                                                             \
+		    m->incrementCountnothing();                                                                   \
+		    if(trimKey){                                                                                  \
+			fqPut(text[S.sidx[S_PAIR1]], "@"+rr.d1+"/1", rr.cmt, rr.s1.substr(S.key1.length()), rr.q1.substr(S.key1.length())); \
+			fqPut(text[S.sidx[S_PAIR2]], "@"+rr.d2+"/2", rr.cmt, rr.s2.substr(S.key2.length()), rr.q2.substr(S.key2.length())); \
+		    }else{                                                                                        \
+			fqPut(text[S.sidx[S_PAIR1]], "@"+rr.d1+"/1", rr.cmt, rr.s1, rr.q1);                       \
+			fqPut(text[S.sidx[S_PAIR2]], "@"+rr.d2+"/2", rr.cmt, rr.s2, rr.q2);                       \
+		    }                                                                                             \
+		}                                                                                                 \
+	    }                                                                                                     \
+	}else{ /*single-end*/                                                                                     \
+	    if(rr.code != ' '){ /*either chimera or missing key*/                                                 \
+		if(rr.code == 'K'){                                                                               \
+		    m->incrementCountfkey();                                                                      \
+		}else{                                                                                            \
+		    if(rr.code == 'D'){                                                                           \
+			m->incrementCountchimera();                                                               \
+		    }else{                                                                                        \
+			if(rr.code == 'U'){ /*UMI problem, sequence is too short*/                                \
+			    m->incrementCountUMIp();                                                              \
+			}else{                                                                                    \
+			    cerr << "leehom: Wrong return code =\""<<rr.code<<"\""<<endl;                         \
+			    exit(1);                                                                              \
+			}                                                                                         \
+		    }                                                                                             \
+		}                                                                                                 \
+		fqPut(text[S.sidx[S_SINGLEF]], rr.d1, rr.cmt, rr.s1, rr.q1);                                      \
+	    }else{                                                                                                \
+		if(rr.sequence != ""){ /*new sequence*/                                                           \
+		    m->incrementCounttrimmed();                                                                   \
+		    fqPut(text[S.sidx[S_SINGLE]], rr.d1, rr.cmt, rr.sequence, rr.quality);                        \
+		}else{                                                                                            \
+		    m->incrementCountnothing();                                                                   \
+		    if(trimKey){                                                                                  \
+			fqPut(text[S.sidx[S_SINGLE]], rr.d1, rr.cmt, rr.s1.substr(S.key1.length()), rr.q1.substr(S.key1.length())); \
+		    }else{                                                                                        \
+			fqPut(text[S.sidx[S_SINGLE]], rr.d1, rr.cmt, rr.s1, rr.q1);                               \
+		    }                                                                                             \
+		}                                                                                                 \
+	    }                                                                                                     \
+	}                                                                                                         \
+    }
+
+    for(unsigned i=0;i<in.recs.size();i++){
+	m->setRandomContext(in.firstRecord + i);
+	//cerr<<"process "<<in.recs[i].d1<<endl;
 	fqrecord toadd;
 
 
@@ -997,8 +676,8 @@ void *mainComputationThreadFQ(void * argc){
 	if(!singleEndModeFQ){
 	    
 
-	    merged result=	mtr->process_PE(currentChunk->dataToProcess->at(i).s1,currentChunk->dataToProcess->at(i).q1,
-						currentChunk->dataToProcess->at(i).s2,currentChunk->dataToProcess->at(i).q2);
+	    merged result=	m->process_PE(in.recs[i].s1,in.recs[i].q1,
+						in.recs[i].s2,in.recs[i].q2);
 	    
 	    
 
@@ -1065,11 +744,11 @@ void *mainComputationThreadFQ(void * argc){
 		    
 		    if(umif != 0){
 			//cut
-			umifS                                 = currentChunk->dataToProcess->at(i).s1.substr(0,  umif);
-			umifQ                                 = currentChunk->dataToProcess->at(i).q1.substr(0,  umif);
+			umifS                                 = in.recs[i].s1.substr(0,  umif);
+			umifQ                                 = in.recs[i].q1.substr(0,  umif);
 			
-			currentChunk->dataToProcess->at(i).s1 = currentChunk->dataToProcess->at(i).s1.substr(umif+umtf);
-			currentChunk->dataToProcess->at(i).q1 = currentChunk->dataToProcess->at(i).q1.substr(umif+umtf);	 	
+			in.recs[i].s1 = in.recs[i].s1.substr(umif+umtf);
+			in.recs[i].q1 = in.recs[i].q1.substr(umif+umtf);	 	
 
 			if(umir == 0){//add them now
 			    cmt = cmt+"\tRX:Z:"+umifS;
@@ -1079,12 +758,12 @@ void *mainComputationThreadFQ(void * argc){
 		    
 
 		    if(umir != 0){
-			umirS                                 = reverseComplement(currentChunk->dataToProcess->at(i).s2.substr(0,  umir));
-			umirQ                                 =                   currentChunk->dataToProcess->at(i).q2.substr(0,  umir);
+			umirS                                 = reverseComplement(in.recs[i].s2.substr(0,  umir));
+			umirQ                                 =                   in.recs[i].q2.substr(0,  umir);
 			reverse(umirQ.begin(),umirQ.end());
 
-			currentChunk->dataToProcess->at(i).s2 = currentChunk->dataToProcess->at(i).s2.substr(0,currentChunk->dataToProcess->at(i).s2.length()-umir-umtr);
-			currentChunk->dataToProcess->at(i).q2 = currentChunk->dataToProcess->at(i).q2.substr(0,currentChunk->dataToProcess->at(i).q2.length()-umir-umtr);
+			in.recs[i].s2 = in.recs[i].s2.substr(0,in.recs[i].s2.length()-umir-umtr);
+			in.recs[i].q2 = in.recs[i].q2.substr(0,in.recs[i].q2.length()-umir-umtr);
 			
 			if(umif != 0){
 			    cmt = cmt+"\tRX:Z:"+umifS+"-"+umirS;
@@ -1099,20 +778,20 @@ void *mainComputationThreadFQ(void * argc){
 
 	    }//end UMI
 	    
-	    //mtr->incrementCountall();
+	    //m->incrementCountall();
 	    toadd.code         = result.code;
 	    
 	    toadd.sequence     = result.sequence;
 	    toadd.quality      = result.quality;
 	    toadd.cmt          = cmt;
 
-	    toadd.d1           = currentChunk->dataToProcess->at(i).d1;
-	    toadd.s1           = currentChunk->dataToProcess->at(i).s1;
-	    toadd.q1           = currentChunk->dataToProcess->at(i).q1;
+	    toadd.d1           = in.recs[i].d1;
+	    toadd.s1           = in.recs[i].s1;
+	    toadd.q1           = in.recs[i].q1;
 	    
-	    toadd.d2           = currentChunk->dataToProcess->at(i).d2;
-	    toadd.s2           = currentChunk->dataToProcess->at(i).s2;
-	    toadd.q2           = currentChunk->dataToProcess->at(i).q2;
+	    toadd.d2           = in.recs[i].d2;
+	    toadd.s2           = in.recs[i].s2;
+	    toadd.q2           = in.recs[i].q2;
 
 	    toadd.paired       = true;
 
@@ -1123,8 +802,8 @@ void *mainComputationThreadFQ(void * argc){
 	}else{//V single mode below V
 		
 		
-	    merged result=mtr->process_SR(currentChunk->dataToProcess->at(i).s1,
-					  currentChunk->dataToProcess->at(i).q1); //*(fo1->getSeq()),*(fo1->getQual()));
+	    merged result=m->process_SR(in.recs[i].s1,
+					  in.recs[i].q1); //*(fo1->getSeq()),*(fo1->getQual()));
 
 
 	    if(umi){
@@ -1190,11 +869,11 @@ void *mainComputationThreadFQ(void * argc){
 		    
 		    if(umif != 0){
 			//cut
-			umifS                                 = currentChunk->dataToProcess->at(i).s1.substr(0,  umif);
-			umifQ                                 = currentChunk->dataToProcess->at(i).q1.substr(0,  umif);
+			umifS                                 = in.recs[i].s1.substr(0,  umif);
+			umifQ                                 = in.recs[i].q1.substr(0,  umif);
 			
-			currentChunk->dataToProcess->at(i).s1 = currentChunk->dataToProcess->at(i).s1.substr(umif+umtf);
-			currentChunk->dataToProcess->at(i).q1 = currentChunk->dataToProcess->at(i).q1.substr(umif+umtf);	 	
+			in.recs[i].s1 = in.recs[i].s1.substr(umif+umtf);
+			in.recs[i].q1 = in.recs[i].q1.substr(umif+umtf);	 	
 
 			if(umir == 0){//add them now
 			    cmt = cmt+"\tRX:Z:"+umifS;
@@ -1222,7 +901,7 @@ void *mainComputationThreadFQ(void * argc){
 
 	   
 
-	    mtr->incrementCountall();
+	    m->incrementCountall();
 	    toadd.code = result.code;
 	    toadd.paired  =  false;
 
@@ -1231,9 +910,9 @@ void *mainComputationThreadFQ(void * argc){
 	    toadd.sequence     = result.sequence;
 	    toadd.quality      = result.quality;
 	    toadd.cmt          = cmt;
-	    toadd.d1           = currentChunk->dataToProcess->at(i).d1;
-	    toadd.s1           = currentChunk->dataToProcess->at(i).s1;
-	    toadd.q1           = currentChunk->dataToProcess->at(i).q1;
+	    toadd.d1           = in.recs[i].d1;
+	    toadd.s1           = in.recs[i].s1;
+	    toadd.q1           = in.recs[i].q1;
 	    
 
 
@@ -1243,486 +922,560 @@ void *mainComputationThreadFQ(void * argc){
 
 	//totalSeqs++;
     
-	chunkToWrite->dataToProcess->push_back(toadd);
+	emitFq(toadd);
 
 
     }
 
+    #undef emitFq
 
-	
-
-
-    ////cerr<<"Thread #"<<rankThread <<" is done with computations"<<endl;
-
-    //////////////////////////////////////////////////////////////
-    //                END   COMPUTATION                         //
-    //////////////////////////////////////////////////////////////
-
-#ifdef DEBUG    
-    int rankLastChunk = currentChunk->rank;
-#endif
-
-    delete currentChunk;//input chunk
-    //TO REMOVE
-    //int fakeSleep=int( 10*(1/double(rankThread)));
-    //COUNTERS
-
-#ifdef DEBUG    
-    rc = pthread_mutex_lock(&mutexCERR);
-    checkResults("pthread_mutex_lock()\n", rc);
-    
-    //cerr<<"Thread #"<<rankThread <<" is done with computations, sleep "<<fakeSleep<<" rank produced "<<rankLastChunk<<endl;
-    cerr<<"Thread #"<<rankThread <<" is done with computations, rank produced "<<rankLastChunk<<" size of data "<<chunkToWrite->dataToProcess->size()<<endl;
-    //sleep(fakeSleep);
-    rc = pthread_mutex_unlock(&mutexCERR);
-    checkResults("pthread_mutex_unlock()\n", rc);     
-#endif
-
-    //take mutex    
-    rc = pthread_mutex_lock(&mutexCounter);
-    checkResults("pthread_mutex_lock()\n", rc);
-
-
-    //---> mutex is taken here <---
-
-    //if(int(queueDataTowrite.size())>(2*numberOfThreads)){	
-    //if queue is full
-    if(int(queueDataTowriteFQ.size())>(maxQueueDataTowriteSize)){		
-
-	forceInsertProcedureFQ(chunkToWrite,rankThread);
-
-    }else{// just insert it if there is space
-
-
-#ifdef DEBUG
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);
-	       
-	cerr<<"Thread #"<<rankThread<<" has space in queue, queue size= "<<int(queueDataTowriteFQ.size())<<" rank of chunk="<<chunkToWrite->rank<<endl;
-
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);     
-#endif
-
-	queueDataTowriteFQ.push(chunkToWrite);
-	//release mutex
-	rc = pthread_mutex_unlock(&mutexCounter);
-	checkResults("pthread_mutex_unlock()\n", rc);	
-
-
-    }
-    
-#ifdef DEBUG
-    rc = pthread_mutex_lock(&mutexCERR);
-    checkResults("pthread_mutex_lock()\n", rc);
-    
-    cerr<<"Thread #"<<rankThread <<" is re-starting"<<endl;
-
-    rc = pthread_mutex_unlock(&mutexCERR);
-    checkResults("pthread_mutex_unlock()\n", rc);     
-#endif
-
-    goto checkqueue;	   
-
-
-    
-
-#ifdef DEBUG     
-
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);
-	       
-	cerr<<"Thread "<<rankThread<<" ended "<<endl;
-
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);
-
-#endif
-
-    return NULL;
-
+    FqOutChunk * out = new FqOutChunk();
+    for(int k=0;k<6;k++)
+	if(!text[k].empty())
+	    gzipMember(text[k], out->data[k], S.gzLevel);
+    return out;
 }
 
 
+//! Worker: processes the chunks until there are none left
+template<class In, class Out, class Fn>
+static void workerLoop(OrderedPipeline<In,Out> * pipe,
+		       Fn process,
+		       vector<MergeTrimReads *> * instances,
+		       mutex * mtx){
+    MergeTrimReads * m = NULL;
+    uint64_t rank;
+    In *     in;
+    struct StatsAtExit { ~StatsAtExit(){ if(statsEnabled()) statsAdd(statsWorkers, threadCpuSeconds()); } } statsAtExit;
+    while(pipe->take(rank, in)){
+	if(m == NULL){
+	    //created now and not when the thread starts, the adapters might have been inferred from the first chunk
+	    m = new MergeTrimReads(*mtr);
+	    lock_guard<mutex> lock(*mtx);
+	    instances->push_back(m);
+	}
+	Out * out = process(m, *in);
+	delete in;
+	pipe->put(rank, out);
+    }
+}
 
-bool checkForWritingLoop(BamWriter * writer,int * lastWrittenChunk){
 
+//! Adds the tally of the workers to the main object and prints the report
+static void reportTallies(const Settings & S, vector<MergeTrimReads *> & instances){
+    for(size_t i=0;i<instances.size();i++){
+	mtr->addCounts(*instances[i]);
+	delete instances[i];
+    }
+    instances.clear();
 
-    //check something to write
-    int rc = pthread_mutex_lock(&mutexCounter);
-    checkResults("pthread_mutex_lock()\n", rc);
-	    
-    if(!queueDataTowrite.empty()){
-	DataChunk *  dataToWrite= queueDataTowrite.top();
-	if( *lastWrittenChunk == (dataToWrite->rank-1) ){
+    cerr <<mtr->reportSingleLine()<<endl;
+    statsReport();
 
-#if defined(DEBUG) ||defined(DEBUGSLEEPING)
-	    int qsize = queueDataTowrite.size(); 
-#endif
+    if(S.printLog){
+	ofstream fileLog;
+	fileLog.open(S.logFileName.c_str());
 
-	    queueDataTowrite.pop();
-	    rc = pthread_mutex_unlock(&mutexCounter);
-	    checkResults("pthread_mutex_unlock()\n", rc);
-
-#ifdef DEBUG 
-	    rc = pthread_mutex_lock(&mutexCERR);
-	    checkResults("pthread_mutex_lock()\n", rc);			
-	    cerr<<"loop: writing "<<dataToWrite->rank<<" queue size= "<<qsize<<endl;			
-	    rc = pthread_mutex_unlock(&mutexCERR);
-	    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-	    //writing dataToWrite
-	    for(unsigned int i=0;i<dataToWrite->dataToProcess->size();i++){
-		//cout<<"loop: writing "<<dataToWrite->dataToProcess->at(i).Name<<endl;
-		writer->SaveAlignment( dataToWrite->dataToProcess->at(i) );
-		// outfile<< dataToWrite->dataToProcess->at(i).Name 
-		//        << endl  
-		//        << dataToWrite->dataToProcess->at(i).QueryBases << endl
-		//        << "+" <<endl 
-		//        << dataToWrite->dataToProcess->at(i).Qualities << endl;
-	    }
-	    *lastWrittenChunk=dataToWrite->rank;
-
-#ifdef DEBUG 
-	    rc = pthread_mutex_lock(&mutexCERR);
-	    checkResults("pthread_mutex_lock()\n", rc);			
-	    cerr<<"loop: written "<<dataToWrite->rank<<" lastWrittenChunk= "<<*lastWrittenChunk<<endl;			
-	    rc = pthread_mutex_unlock(&mutexCERR);
-	    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-	    delete dataToWrite;
-	    return true;
+	if (fileLog.is_open()){
+	    fileLog <<mtr->reportMultipleLines() <<endl;
 	}else{
-			
-#ifdef DEBUG 
-	    rc = pthread_mutex_lock(&mutexCERR);
-	    checkResults("pthread_mutex_lock()\n", rc);
-			
-	    cerr<<"loop: is waiting for chunk "<<*lastWrittenChunk<<" but got  "<<(dataToWrite->rank)<<endl;
-			
-	    rc = pthread_mutex_unlock(&mutexCERR);
-	    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-
-	    rc = pthread_mutex_unlock(&mutexCounter);
-	    checkResults("pthread_mutex_unlock()\n", rc);
-
-	    return false;
+	    cerr << "Unable to print to file "<<S.logFileName<<endl;
 	}
-    }else{//if queue is empty
-	//cout<<"queue to write is empty "<<endl;
-
-		    			
-#ifdef DEBUG 
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);
-		    
-	cerr<<"loop: writing queue is empty"<<endl;
-			
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-	rc = pthread_mutex_unlock(&mutexCounter);
-	checkResults("pthread_mutex_unlock()\n", rc);
-
-	return false;
+	fileLog.close();
     }
-    return false;
-
 }
 
 
+/////////////////////////////////////////////////////////////////////
+//                              BAM                                //
+/////////////////////////////////////////////////////////////////////
 
-bool checkForWritingLoopFQ(fqwriters * onereadgroup,int * lastWrittenChunk,MergeTrimReads *     mtr,    unsigned int umif,    unsigned int umir  , unsigned int umtf,    unsigned int umtr){
+typedef OrderedPipeline<BamChunk,BamChunk> BamPipeline;
 
-
-    //check something to write
-    int rc = pthread_mutex_lock(&mutexCounter);
-    checkResults("pthread_mutex_lock()\n", rc);
-	    
-    if(!queueDataTowriteFQ.empty()){
-	DataChunkFQ *  dataToWrite = queueDataTowriteFQ.top();
-	if( *lastWrittenChunk == (dataToWrite->rank-1) ){
-
-#if defined(DEBUG) ||defined(DEBUGSLEEPING)
-	    int qsize = queueDataTowriteFQ.size(); 
-#endif
-
-	    queueDataTowriteFQ.pop();
-	    rc = pthread_mutex_unlock(&mutexCounter);
-	    checkResults("pthread_mutex_unlock()\n", rc);
-
-#ifdef DEBUG 
-	    rc = pthread_mutex_lock(&mutexCERR);
-	    checkResults("pthread_mutex_lock()\n", rc);			
-	    cerr<<"loop: writing "<<dataToWrite->rank<<" queue size= "<<qsize<<endl;			
-	    rc = pthread_mutex_unlock(&mutexCERR);
-	    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-	    //writing dataToWrite
-	    for(unsigned int i=0;i<dataToWrite->dataToProcess->size();i++){
-		if(dataToWrite->dataToProcess->at(i).paired){//PAIRED-END
-
-		    mtr->incrementCountall();
-		    
-		    if(dataToWrite->dataToProcess->at(i).code != ' '){ //keys or chimeras
-			
-			if(dataToWrite->dataToProcess->at(i).code == 'K'){
-			    mtr->incrementCountfkey();
-			}else{
-			    if(dataToWrite->dataToProcess->at(i).code == 'D'){
-				mtr->incrementCountchimera();
-			    }else{
-				if(dataToWrite->dataToProcess->at(i).code == 'U'){//UMI problem, fragment is too short, do not increment anything
-				    mtr->incrementCountUMIp();
-				}else{
-				    cerr << "leehom: Wrong return code =\""<<dataToWrite->dataToProcess->at(i).code<<"\""<<endl;
-				    exit(1);
-				}
-			    }
-			}
-
-			(*onereadgroup->pairr1f)<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
-			(*onereadgroup->pairr2f)<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
-
-			continue;
-		    
-		    }else{
-		        if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence			    
-			    (*onereadgroup->single)<<"@"<<dataToWrite->dataToProcess->at(i).d1<<" " <<dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).sequence<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).quality<<endl;    	    
-			    
-			    if( (dataToWrite->dataToProcess->at(i).sequence.length()+umif+umir+umtf+umtr) > max(dataToWrite->dataToProcess->at(i).s1.length(),dataToWrite->dataToProcess->at(i).s2.length()) ){
-				mtr->incrementCountmergedoverlap();
-			    }else{
-				mtr->incrementCountmerged();			  
-			    }
-
-			}else{ //keep as is
-			    mtr->incrementCountnothing();
-			    
-			    (*onereadgroup->pairr1)<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<dataToWrite->dataToProcess->at(i).cmt<<  endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;						    
-			    (*onereadgroup->pairr2)<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<dataToWrite->dataToProcess->at(i).cmt<<  endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
-			    
-			}
-		    }
-		    
-		}else{//SINGLE-END
-
-		    
-		    if(dataToWrite->dataToProcess->at(i).code != ' '){ //either chimera or missing key
-			
-			if(dataToWrite->dataToProcess->at(i).code == 'K'){
-			    mtr->incrementCountfkey();
-			}else{
-			    if(dataToWrite->dataToProcess->at(i).code == 'D'){
-				mtr->incrementCountchimera();
-			    }else{
-				if(dataToWrite->dataToProcess->at(i).code == 'U'){//UMI problem
-				    mtr->incrementCountUMIp();
-				}else{
-				    cerr << "leehom: Wrong return code =\""<<dataToWrite->dataToProcess->at(i).code<<"\""<<endl;
-				    exit(1);
-				}
-			    }
-			}
-			
-			(*onereadgroup->singlef)<<""<<dataToWrite->dataToProcess->at(i).d1<<" " <<dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).s1 <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1 <<endl;
-			continue;
-		    }
-		    
-		    if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence
-			mtr->incrementCounttrimmed();
-			(*onereadgroup->single)<<""<<dataToWrite->dataToProcess->at(i).d1<<" "<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).sequence <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).quality<<endl;
-		    }else{
-			mtr->incrementCountnothing();
-			(*onereadgroup->single)<<""<<dataToWrite->dataToProcess->at(i).d1<<" "<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1       <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1     <<endl;
-		    }
-		}
-			
-	    }
-	    *lastWrittenChunk=dataToWrite->rank;
-
-#ifdef DEBUG 
-	    rc = pthread_mutex_lock(&mutexCERR);
-	    checkResults("pthread_mutex_lock()\n", rc);			
-	    cerr<<"loop: written "<<dataToWrite->rank<<" lastWrittenChunk= "<<*lastWrittenChunk<<endl;			
-	    rc = pthread_mutex_unlock(&mutexCERR);
-	    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-	    delete dataToWrite;
-	    return true;
-	}else{
-			
-#ifdef DEBUG 
-	    rc = pthread_mutex_lock(&mutexCERR);
-	    checkResults("pthread_mutex_lock()\n", rc);
-			
-	    cerr<<"loop: is waiting for chunk "<<*lastWrittenChunk<<" but got  "<<(dataToWrite->rank)<<endl;
-			
-	    rc = pthread_mutex_unlock(&mutexCERR);
-	    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-
-	    rc = pthread_mutex_unlock(&mutexCounter);
-	    checkResults("pthread_mutex_unlock()\n", rc);
-	    return false;
-	}
-    }else{//if queue is empty
-	//cout<<"queue to write is empty "<<endl;
-
-		    			
-#ifdef DEBUG 
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);
-		    
-	cerr<<"loopfq: writing queue is empty"<<endl;
-			
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-	rc = pthread_mutex_unlock(&mutexCounter);
-	checkResults("pthread_mutex_unlock()\n", rc);
-	return false;
-    }
-    return false;
-}
-
-
-bool setPairedDetectAdapters(vector<string>         & adapterSeqs_fwd,
-			     vector<string> & qualadaptSeq_fwd,
-			     vector<string>         & adapterSeqs_rev,
-			     vector<string> & qualadaptSeq_rev){
-
-    //collecting the adapters
-    string fwd_adapt=mtr->mlConsensus(adapterSeqs_fwd,qualadaptSeq_fwd);
-    
-    float fwdIfrac;
-    int   fwdI=0;
-    for(unsigned int i=0;i<fwd_adapt.size();i++){	
-	if(fwd_adapt[i] == 'I'){
-	    fwdI++;
-	}
-    }
-    fwdIfrac = (float( fwdI) /float( fwd_adapt.size() ) );
-    float thresholdUndefined = 0.2;
-
-    bool errorFound=false;
-    if(fwdIfrac < thresholdUndefined){
-	cerr<<"Inferred fwd adapter: "<<fwd_adapt<<endl;
-	mtr->setFadapter(fwd_adapt);
-    }else{
-	cerr<<"Cannot infer the forward adapter, only found "<<fwd_adapt<<" fraction undefined: "<<(fwdIfrac*100)<<"%"<<" threshold: "<<(thresholdUndefined*100)<<"%"<<endl;
-	errorFound=true;
-	//return false;
-    }
-    
-    string rev_adapt=mtr->mlConsensus(adapterSeqs_rev,qualadaptSeq_rev);
-
-    float revIfrac;
-    int   revI=0;
-    for(unsigned int i=0;i<rev_adapt.size();i++){	
-	if(rev_adapt[i] == 'I'){
-	    revI++;
-	}
-    }
-    revIfrac = (float( revI) /float( rev_adapt.size() ) );
-    if(revIfrac < thresholdUndefined){
-	cerr<<"Inferred rev adapter: "<<rev_adapt<<endl;
-	mtr->setRadapter(rev_adapt);		
-    }else{
-	cerr<<"Cannot infer the reverse adapter, only found "<<rev_adapt<<" fraction undefined: "<<(revIfrac*100)<<"%"<<" threshold: "<<(thresholdUndefined*100)<<"%"<<endl;
-	errorFound=true;
-	//return false;
-    }
-
-    if(errorFound)
-	return false;
-    
-    return true;
-
-}
-				 
-
-bool detectAdaptBAM(const DataChunk * currentChunk){
-
-    BamAlignment al;
-    BamAlignment al2;
-    bool al2Null=true;
-    vector<string> adapterSeqs_fwd;
-    vector<string> qualadaptSeq_fwd;
-    vector<string> adapterSeqs_rev;
-    vector<string> qualadaptSeq_rev;
-
-    //iterating over each record in the chunk
-    for(unsigned i=0;i<currentChunk->dataToProcess->size();i++){
-	
-	al = currentChunk->dataToProcess->at(i);
-	
-	if(al.IsPaired() && 
-	   al2Null ){
-	    al2=al;
-	    al2Null=false;
-	    continue;
-	}else{
-	    if(al.IsPaired() && 
-	       !al2Null){
-				
-		//bool  result =  mtr->processPair(al,al2);
-		mtr->inferadaptPairBAM(al ,al2,adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
-		
-	    }else{ 
-
-		//mtr->processSingle(al);
-		cerr<<"The automatic detection of the adapters is not yet coded for single-end reads"<<endl;
+static void bamWriterLoop(BamPipeline * pipe, samFile * fpOut, sam_hdr_t * hdrOut){
+    struct StatsAtExit { ~StatsAtExit(){ if(statsEnabled()) statsAdd(statsWriter, threadCpuSeconds()); } } statsAtExit;
+    BamChunk * c;
+    while(pipe->nextOutput(c)){
+	for(size_t i=0;i<c->recs.size();i++){
+	    if(sam_write1(fpOut, hdrOut, c->recs[i]) < 0){
+		cerr << "Error while writing the output BAM file"<<endl;
 		exit(1);
-	    } //end single end
-	    al2Null=true;
-	}//second pair		    
-
+	    }
+	}
+	delete c;
+	pipe->written();
     }
-
-    return setPairedDetectAdapters(adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
 }
 
 
-
-
-bool detectAdaptFQ(const DataChunkFQ * currentChunk){
-    fqrecord fr;
-
-    vector<string> adapterSeqs_fwd;
-    vector<string> qualadaptSeq_fwd;
-    vector<string> adapterSeqs_rev;
-    vector<string> qualadaptSeq_rev;
-
-    //iterating over each record in the chunk
-    for(unsigned i=0;i<currentChunk->dataToProcess->size();i++){
+//! Reads the next record (a pair, or a single read) from the fastq files. Returns 0, or 1 if the files do not match.
+static int nextFqRecord(FastQParser * fqp1, FastQParser * fqp2, bool singleEndModeFQ, fqrecord & fqtoadd){
+	    FastQObj * fo1=fqp1->getData();
+	    vector<string> def1=allTokens( *(fo1->getID()), ' '  );
+	    string def1s=def1[0];
 	
-	fr = currentChunk->dataToProcess->at(i);
-	
-	if( fr.paired ){
-	    mtr->inferadaptPairFQ(fr,adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
-	}else{
-	    //mtr->processSingle(al);
+
+	    FastQObj * fo2;
+	    string def2s;
+	    string ext2s;
+	    
+	    if(!singleEndModeFQ){
+		if(!fqp2->hasData()){
+		    cerr << "ERROR: Discrepency between fastq files at record " <<  *(fo1->getID()) <<endl;
+		    return 1;
+		}
+
+		fo2=fqp2->getData();
+		vector<string> def2=allTokens( *(fo2->getID()), ' ' );
+		def2s=def2[0];
+
+
+		if(strEndsWith(def1s,"/1")){
+		    def1s=def1s.substr(0,def1s.size()-2);
+		}
+		if(strEndsWith(def2s,"/2")){
+		    def2s=def2s.substr(0,def2s.size()-2);
+		}
+
+		if(strBeginsWith(def1s,"@")){
+		    def1s=def1s.substr(1,def1s.size()-1);
+		}
+		if(strBeginsWith(def2s,"@")){
+		    def2s=def2s.substr(1,def2s.size()-1);
+		}
+
+
+		if(def1s != def2s){
+		    cerr << "ERROR: Discrepency between fastq files, different names " << *(fo1->getID()) <<" and "<< *(fo2->getID()) <<endl;
+		    return 1;
+		}
+
+		//PAIRED COMPUTATION
+		fqtoadd.paired = true;
+
+		fqtoadd.d1     = def1s;//*(fo1->getID()  );
+		fqtoadd.s1     = *(fo1->getSeq() );
+		fqtoadd.q1     = *(fo1->getQual());
+
+		fqtoadd.d2     = def2s;//*(fo2->getID()  );
+		fqtoadd.s2     = *(fo2->getSeq() );
+		fqtoadd.q2     = *(fo2->getQual());
+		
+	    }else{		
+		//SINGLE COMPUTATION
+		fqtoadd.paired = false;
+
+		fqtoadd.d1     = def1s;//*(fo1->getID());
+		fqtoadd.s1     = *(fo1->getSeq());
+		fqtoadd.q1     = *(fo1->getQual());
+
+	    }
+
+    return 0;
+}
+
+//! Fills b with an unmapped read taken from a fastq record, the qualities are converted from ASCII to phred
+static void fastqToBamRecord(bam1_t * b, const string & name, const string & seq, const string & qual, uint16_t flag, int offset){
+    if(seq.size() != qual.size()){
+	cerr << "ERROR: the sequence and the qualities of read "<<name<<" do not have the same length"<<endl;
+	exit(1);
+    }
+    const string qname = strBeginsWith(name,"@") ? name.substr(1) : name;
+    vector<uint8_t> q(qual.size());
+    for(size_t i=0;i<qual.size();i++){
+	int v = int((unsigned char) qual[i]) - offset;
+	q[i]  = uint8_t( v < 0 ? 0 : (v > 93 ? 93 : v) );
+    }
+    if(bam_set1(b, qname.size(), qname.c_str(), flag, -1, -1, 0, 0, NULL, -1, -1, 0,
+		seq.size(), seq.c_str(), (const char *) (q.empty() ? NULL : &q[0]), 0) < 0){
+	cerr << "ERROR: cannot build the BAM record of read "<<name<<endl;
+	exit(1);
+    }
+}
+
+static int runBam(Settings & S, int argc, char * argv[]){
+
+    if( S.bamFileOUT == ""  ){
+	S.bamFileOUT = "/dev/stdout" ;
+    }
+
+    samFile *     fpIn  = NULL;
+    sam_hdr_t *   hdrIn = NULL;
+    FastQParser * fqp1  = NULL;
+    FastQParser * fqp2  = NULL;
+    bam1_t *      pendingMate = NULL;     //fastq input: second read of the pair just read
+
+    if(S.fastqToBam){
+	if(S.fastqfile1 == ""){
+	    cerr<<"ERROR : Must specify as least the first file for fastq"<<endl;
+	    return 1;
+	}
+	if(S.singleEndModeFQ && S.detectAdapt){
 	    cerr<<"The automatic detection of the adapters is not yet coded for single-end reads"<<endl;
-	    exit(1);
-	}//second pair
-		    
-
+	    return 1;
+	}
+	fqp1 = new FastQParser (S.fastqfile1);
+	if(!S.singleEndModeFQ)
+	    fqp2 = new FastQParser (S.fastqfile2);
+	const string hdrText = "@HD\tVN:1.6\tSO:unsorted";
+	hdrIn = sam_hdr_parse(hdrText.size(), hdrText.c_str());
+    }else{
+	fpIn = sam_open(S.bamFile.c_str(), "r");
+	if(fpIn == NULL){
+	    cerr << "Could not open input BAM file" << S.bamFile<<endl;
+	    return 1;
+	}
+	hdrIn = sam_hdr_read(fpIn);
+    }
+    if(hdrIn == NULL){
+	cerr << "Could not read the header of the input BAM file" << S.bamFile<<endl;
+	return 1;
     }
 
-    return setPairedDetectAdapters(adapterSeqs_fwd,qualadaptSeq_fwd,adapterSeqs_rev,qualadaptSeq_rev);
+    //adding this program to the header
+    string pID          = "leeHom";
+    string pName        = "leeHom";
+    string pCommandLine = "";
+    for(int i=0;i<(argc);i++){
+	pCommandLine += (string(argv[i])+" ");
+    }
+    string headerText = (sam_hdr_length(hdrIn) > 0) ? string(sam_hdr_str(hdrIn), sam_hdr_length(hdrIn)) : string("");
+    while(!headerText.empty() && headerText[headerText.size()-1] == '\n')   //putProgramInHeaderHTS adds its own line breaks
+	headerText.erase(headerText.size()-1);
+    putProgramInHeaderHTS(&headerText,pID,pName,pCommandLine,returnGitHubVersion(string(argv[0]),".."));
+    headerText += "\n";
+
+    sam_hdr_t * hdrOut = sam_hdr_parse(headerText.size(), headerText.c_str());
+    if(hdrOut == NULL || sam_hdr_nref(hdrOut) != sam_hdr_nref(hdrIn)){
+	cerr << "Could not build the header of the output BAM file" <<endl;
+	return 1;
+    }
+
+    //we will not call bgzip with full compression, good for piping into another program to
+    //lessen the load on the CPU
+    string bamMode = "wb";
+    if(S.produceUnCompressedBAM)
+	bamMode = "wb0";
+    else if(S.gzLevel >= 0)
+	bamMode += char('0'+S.gzLevel);
+    samFile * fpOut = sam_open(S.bamFileOUT.c_str(), bamMode.c_str());
+    if(fpOut == NULL){
+	cerr << "Could not open output BAM file "<<S.bamFileOUT << endl;
+	return 1;
+    }
+    if(sam_hdr_write(fpOut, hdrOut) < 0){
+	cerr << "Could not write the header of the output BAM file "<<S.bamFileOUT << endl;
+	return 1;
+    }
+
+    if(numberOfThreads > 1){
+	if(fpIn != NULL)
+	    hts_set_threads(fpIn,  numberOfThreads);
+	hts_set_threads(fpOut, numberOfThreads);
+    }
+
+    //next record of the input: 1 got one, 0 end of the input
+    auto readRecord = [&](bam1_t * b) -> int {
+	if(fpIn != NULL)
+	    return (sam_read1(fpIn, hdrIn, b) >= 0) ? 1 : 0;
+	if(pendingMate != NULL){
+	    bam_copy1(b, pendingMate);
+	    bam_destroy1(pendingMate);
+	    pendingMate = NULL;
+	    return 1;
+	}
+	if(!fqp1->hasData())
+	    return 0;
+	fqrecord r;
+	if(nextFqRecord(fqp1, fqp2, S.singleEndModeFQ, r) != 0)
+	    exit(1);
+	if(r.paired){
+	    fastqToBamRecord(b, r.d1, r.s1, r.q1, BAM_FPAIRED|BAM_FUNMAP|BAM_FMUNMAP|BAM_FREAD1, S.fqQualOffset);
+	    pendingMate = bam_init1();
+	    fastqToBamRecord(pendingMate, r.d2, r.s2, r.q2, BAM_FPAIRED|BAM_FUNMAP|BAM_FMUNMAP|BAM_FREAD2, S.fqQualOffset);
+	}else{
+	    fastqToBamRecord(b, r.d1, r.s1, r.q1, BAM_FUNMAP, S.fqQualOffset);
+	}
+	return 1;
+    };
+
+    BamPipeline pipe(3*numberOfThreads+3);
+    vector<MergeTrimReads *> instances;
+    mutex                    instancesMutex;
+
+    vector<thread> workers;
+    for(int i=0;i<numberOfThreads;i++){
+	workers.push_back( thread( workerLoop<BamChunk,BamChunk,function<BamChunk*(MergeTrimReads*,const BamChunk&)> >,
+				   &pipe,
+				   function<BamChunk*(MergeTrimReads*,const BamChunk&)>( [&S](MergeTrimReads * m, const BamChunk & c){ return processBamChunk(m, S, c); } ),
+				   &instances,
+				   &instancesMutex) );
+    }
+    thread writerThread(bamWriterLoop, &pipe, fpOut, hdrOut);
+
+    unsigned int rank    = 0;
+    unsigned int counter = 0;
+    uint64_t     nread   = 0;
+
+    BamChunk * currentChunk = new BamChunk();
+    bam1_t *   b            = bam_init1();
+
+    while( readRecord(b) ){
+
+	if( !(b->core.flag & BAM_FUNMAP) || bam_aux_get(b,"NM") != NULL || bam_aux_get(b,"MD") != NULL ){
+	    if(!S.allowAligned){
+		cerr << "Reads should not be aligned" << endl;
+		exit(1);
+	    }else{
+		//should we remove tags ?
+	    }
+	}
+
+	currentChunk->recs.push_back(b);
+	b = bam_init1();
+	nread++;
+
+	if( counter== ( (S.detectAdapt&&(rank==0))?(sizeChunkDefault*10-1):((sizeChunk-1))) ){
+
+	    if(S.detectAdapt){
+		bool adpd=detectAdaptBAM( currentChunk );
+		if(adpd){//worked
+		    S.detectAdapt=false;
+		}else{
+		    cerr << "Failed to auto detect adapters, please contact the vendor" << endl;
+		    exit(1);
+		}
+	    }
+
+	    pipe.submit(currentChunk);
+	    rank++;
+
+	    currentChunk = new BamChunk();
+	    currentChunk->firstRecord = nread;
+	    counter=0;
+	}else{
+	    counter++;
+	}
+    }
+    bam_destroy1(b);
+    if(fpIn != NULL)
+	sam_close(fpIn);
+    delete fqp1;
+    delete fqp2;
+
+    //last chunk
+    pipe.submit(currentChunk);
+    pipe.closeInput();
+
+    for(size_t i=0;i<workers.size();i++)
+	workers[i].join();
+    writerThread.join();
+    if(statsEnabled()) statsAdd(statsReader, threadCpuSeconds());
+
+    sam_close(fpOut);
+    sam_hdr_destroy(hdrIn);
+    sam_hdr_destroy(hdrOut);
+
+    reportTallies(S, instances);
+    return 0;
 }
 
-		    
+
+
+/////////////////////////////////////////////////////////////////////
+//                             FASTQ                               //
+/////////////////////////////////////////////////////////////////////
+
+typedef OrderedPipeline<FqChunk,FqOutChunk> FqPipeline;
+
+static void fqWriterLoop(FqPipeline * pipe, FILE * const * sinks, bool * wrote){
+    struct StatsAtExit { ~StatsAtExit(){ if(statsEnabled()) statsAdd(statsWriter, threadCpuSeconds()); } } statsAtExit;
+    FqOutChunk * c;
+    while(pipe->nextOutput(c)){
+	for(int k=0;k<6;k++){
+	    if(!c->data[k].empty()){
+		if(fwrite(c->data[k].data(), 1, c->data[k].size(), sinks[k]) != c->data[k].size()){
+		    cerr << "Error while writing the output fastq file"<<endl;
+		    exit(1);
+		}
+		wrote[k]=true;
+	    }
+	}
+	delete c;
+	pipe->written();
+    }
+}
+
+
+static int runFastq(Settings & S){
+
+    const bool singleEndModeFQ = S.singleEndModeFQ;
+
+    if( S.bamFileOUT != ""  || S.produceUnCompressedBAM || S.allowAligned){
+	cerr<<"ERROR : Cannot specify options like -o, -u or --allowAligned for fastq"<<endl;
+	return 1;
+    }
+
+    if(S.fastqfile1 == ""){
+	cerr<<"ERROR : Must specify as least the first file for fastq"<<endl;
+	return 1;
+    }
+
+    if(singleEndModeFQ && S.detectAdapt){
+	cerr<<"The automatic detection of the adapters is not yet coded for single-end reads"<<endl;
+	return 1;
+    }
+
+    //names of the output files for each stream
+    string names[6];
+    const bool interleaved = (S.fastqoutfile.empty() && !S.fastqoutfileb);
+
+    if(singleEndModeFQ){
+	if(!S.fastqoutfile.empty()){
+	    names[S_SINGLE]  = S.fastqoutfile+".fq.gz";
+	    names[S_SINGLEF] = S.fastqoutfile+".fail.fq.gz";
+	}else{
+	    if(S.fastqoutfileb){
+		names[S_SINGLE]  = S.fastqoutfilese;
+		names[S_SINGLEF] = S.fastqoutfilesef;
+	    }else{
+		names[S_SINGLE]  = S.intfastqoutfile;
+	    }
+	}
+    }else{
+	if(!S.fastqoutfile.empty()){
+	    names[S_SINGLE]  = S.fastqoutfile+".fq.gz";
+	    names[S_PAIR1]   = S.fastqoutfile+"_r1.fq.gz";
+	    names[S_PAIR2]   = S.fastqoutfile+"_r2.fq.gz";
+	    names[S_SINGLEF] = S.fastqoutfile+".fail.fq.gz";
+	    names[S_PAIR1F]  = S.fastqoutfile+"_r1.fail.fq.gz";
+	    names[S_PAIR2F]  = S.fastqoutfile+"_r2.fail.fq.gz";
+	}else{
+	    if(S.fastqoutfileb){
+		names[S_SINGLE]  = S.fastqoutfilese;
+		names[S_PAIR1]   = S.fastqoutfilepe1;
+		names[S_PAIR2]   = S.fastqoutfilepe2;
+		names[S_SINGLEF] = S.fastqoutfilesef;
+		names[S_PAIR1F]  = S.fastqoutfilepe1f;
+		names[S_PAIR2F]  = S.fastqoutfilepe2f;
+	    }else{
+		names[S_SINGLE]  = S.intfastqoutfile;
+	    }
+	}
+    }
+
+    //with a single output file all the streams go to it, in the order of the reads
+    for(int k=0;k<6;k++)
+	S.sidx[k] = interleaved ? 0 : k;
+
+    FILE * sinks[6]  = {NULL,NULL,NULL,NULL,NULL,NULL};
+    bool   wrote[6]  = {false,false,false,false,false,false};
+    for(int k=0;k<6;k++){
+	if(!names[k].empty()){
+	    sinks[k] = fopen(names[k].c_str(), "wb");
+	    if(sinks[k] == NULL){
+		cerr<<"Cannot write to file "<<names[k]<<endl;
+		return 1;
+	    }
+	}
+    }
+
+    FastQParser * fqp1;
+    FastQParser * fqp2 = NULL;
+
+    fqp1 = new FastQParser (S.fastqfile1);
+    if(!singleEndModeFQ)
+	fqp2 = new FastQParser (S.fastqfile2);
+
+    FqPipeline pipe(3*numberOfThreads+3);
+    vector<MergeTrimReads *> instances;
+    mutex                    instancesMutex;
+
+    vector<thread> workers;
+    for(int i=0;i<numberOfThreads;i++){
+	workers.push_back( thread( workerLoop<FqChunk,FqOutChunk,function<FqOutChunk*(MergeTrimReads*,FqChunk&)> >,
+				   &pipe,
+				   function<FqOutChunk*(MergeTrimReads*,FqChunk&)>( [&S](MergeTrimReads * m, FqChunk & c){ return processFqChunk(m, S, c); } ),
+				   &instances,
+				   &instancesMutex) );
+    }
+    thread writerThread(fqWriterLoop, &pipe, (FILE * const *) sinks, wrote);
+
+    unsigned int rank    = 0;
+    unsigned int counter = 0;
+    uint64_t     nread   = 0;
+    bool         detectAdapt = S.detectAdapt;
+
+    FqChunk * currentChunkfq = new FqChunk();
+
+	while(fqp1->hasData()){
+
+	    fqrecord fqtoadd;
+	    if(nextFqRecord(fqp1, fqp2, singleEndModeFQ, fqtoadd) != 0)
+		return 1;
+
+	nread++;
+
+	if(counter== ( (detectAdapt && (rank==0))?(sizeChunkDefault*10-1):((sizeChunk-1))) ){
+
+	    currentChunkfq->recs.push_back(fqtoadd);
+	    if(detectAdapt){
+		bool adpd=detectAdaptFQ( currentChunkfq );
+		if(adpd){//worked
+		    detectAdapt=false;
+		}else{
+		    cerr << "Failed to auto detect adapters, please contact the vendor" << endl;
+		    return 1;
+		}
+	    }
+
+	    pipe.submit(currentChunkfq);
+	    rank++;
+
+	    currentChunkfq = new FqChunk();
+	    currentChunkfq->firstRecord = nread;
+	    counter=0;
+	}else{
+	    currentChunkfq->recs.push_back(fqtoadd);
+	    counter++;
+	}
+
+    }//for each data record
+
+    delete fqp1;
+    if(!singleEndModeFQ){
+	delete fqp2;
+    }
+
+    //last chunk
+    pipe.submit(currentChunkfq);
+    pipe.closeInput();
+
+    for(size_t i=0;i<workers.size();i++)
+	workers[i].join();
+    writerThread.join();
+
+    if(statsEnabled()) statsAdd(statsReader, threadCpuSeconds());
+
+    for(int k=0;k<6;k++){
+	if(sinks[k] != NULL){
+	    if(!wrote[k]){ //a gzip file with no data still has to contain one (empty) member
+		string empty;
+		gzipMember("", empty, S.gzLevel);
+		fwrite(empty.data(), 1, empty.size(), sinks[k]);
+	    }
+	    if(fclose(sinks[k]) != 0){
+		cerr<<"Error while closing the file "<<names[k]<<endl;
+		return 1;
+	    }
+	}
+    }
+
+    reportTallies(S, instances);
+    return 0;
+}
+
+
 
 int main (int argc, char *argv[]) {
 
@@ -1750,8 +1503,6 @@ int main (int argc, char *argv[]) {
     bool printLog=false;
     string logFileName;
 
-    BamReader reader;
-    BamWriter writer;
 
     string bamFile;
     string bamFileOUT="";
@@ -1783,17 +1534,21 @@ int main (int argc, char *argv[]) {
     string intfastqoutfile = "";
     
     bool singleEndModeFQ=true;
+    bool fastqToBam=false;      //fastq input, BAM output
     int    qualOffset     = 33;
 
     bool seedSpecified=false;
     unsigned int seed=0;
     
+    int          gzLevel=-1;       //-1: default compression level
+    int          quickBases=0;     //0: quick mode off
+    double       quickFraction=0.4;
+
     unsigned int umif=0;
     unsigned int umir=0;
     unsigned int umiTf=0;//trim after
     unsigned int umiTr=0;
     
-    //int    numberOfThreads   = 1;
 
     const string usage1=string(string(argv[0])+
 			      
@@ -1803,7 +1558,8 @@ int main (int argc, char *argv[]) {
 			      "\n\tYou can specify a unaligned bam file or one or two fastq :\n"+			      
 			      "\t\t"+"-fq1 [file]" +"\t\t"+"First fastq file"+"\n"+
 			      "\t\t"+"-fq2 [file]" +"\t\t"+"Second  fastq file (for paired-end)"+"\n"+
-			      "\t\t"+"-fqo [string]" +"\t\t"+"Output fastq prefix to file (type --help for more options)"+"\n");
+			      "\t\t"+"-fqo [string]" +"\t\t"+"Output fastq prefix to file (type --help for more options)"+"\n"+
+			      "\t\t"+"                \t\t"+"With fastq input, -o or -u write an unaligned BAM (mates consecutive) instead"+"\n");
 
     const string usage2=string(string("or you can use specify manually those:\n")+
 			       "\t\t"+"-fqose   [file]" +"\t\t"+"Output file for fastq single-end (or merged)"+"\n"+
@@ -1861,7 +1617,9 @@ int main (int argc, char *argv[]) {
 			      "\t\t"+"--umtf [bp]"+"\t\t\t\t"+"Remove overhangs of bp after the UMI for the forward read. (default "+stringify(umiTf)+")"+"\n"+
 			      "\t\t"+"--umtr [bp]"+"\t\t\t\t"+"Remove overhangs of bp after the UMI for the reverse read. (default "+stringify(umiTr)+")"+"\n"+
 
-			      "\t\t"+"--trimCutoff"+"\t\t\t\t"+"Lowest number of adapter bases to be observed for single Read trimming (default "+stringify(trimCutoff)+")");
+			      "\t\t"+"--gzlevel [0-9]"+"\t\t\t\t"+"Compression level of the fastq or BAM output (default zlib's own, 6). 1 is much faster for files about 20% bigger, 0 is uncompressed (ignored with -u)"+"\n"+
+			      "\t\t"+"--quickfraction [0-1]"+"\t\t\t"+"How far between the likelihood of random sequences (0) and of a perfect overlap (1) a candidate must be after --quickbases bases to be computed in full (default 0.4)"+"\n"+
+				      "\t\t"+"--trimCutoff"+"\t\t\t\t"+"Lowest number of adapter bases to be observed for single Read trimming (default "+stringify(trimCutoff)+")");
 
     if( (argc== 1) ||
 	(argc== 2 && string(argv[1]) == "-h") ){
@@ -1893,7 +1651,7 @@ int main (int argc, char *argv[]) {
 
 	if(strcmp(argv[i],"-t") == 0 ){
 	    numberOfThreads =destringify<int>(argv[i+1]);
-	    sizeChunk       =sizeChunkDefault*numberOfThreads;
+	    //the size of the chunks does not depend on the number of threads
 	    i++;
 	    continue;
 	}
@@ -2150,6 +1908,42 @@ int main (int argc, char *argv[]) {
 	}
 
 	
+	if(strcmp(argv[i],"--quick") == 0 ){
+	    if(quickBases == 0)
+		quickBases=12;
+	    continue;
+	}
+
+	if(strcmp(argv[i],"--gzlevel") == 0 ){
+	    gzLevel = atoi(argv[i+1]);
+	    if(gzLevel < 0 || gzLevel > 9){
+		cerr<<"--gzlevel must be between 0 and 9"<<endl;
+		return 1;
+	    }
+	    i++;
+	    continue;
+	}
+
+	if(strcmp(argv[i],"--quickfraction") == 0 ){
+	    quickFraction = atof(argv[i+1]);
+	    if(quickFraction < 0.0 || quickFraction > 1.0){
+		cerr<<"--quickfraction must be between 0 and 1"<<endl;
+		return 1;
+	    }
+	    i++;
+	    continue;
+	}
+
+	if(strcmp(argv[i],"--quickbases") == 0 ){
+	    quickBases = atoi(argv[i+1]);
+	    if(quickBases < 1){
+		cerr<<"--quickbases must be at least 1"<<endl;
+		return 1;
+	    }
+	    i++;
+	    continue;
+	}
+
 	if(strcmp(argv[i],"--trimCutoff") == 0 ){
 	    trimCutoff=atoi(argv[i+1]);
 	    i++;
@@ -2160,15 +1954,10 @@ int main (int argc, char *argv[]) {
 	return 1;	    
     }
 
-    maxQueueDataTowriteSize   = 3*numberOfThreads;
-    maxQueueDataToprocessSize = 3*numberOfThreads;
-
-
-#ifdef DEBUG 
-    cerr<<"sizeChunk "<<sizeChunk<<" queue size  "<<maxQueueDataTowriteSize<<endl;
-#endif
 
     bamFile=argv[argc-1];
+
+    fastqToBam = fastqFormat && (!bamFileOUT.empty() || produceUnCompressedBAM);
 
     if(!fastqFormat){
 	if( (bamFile != "-") &&
@@ -2181,11 +1970,24 @@ int main (int argc, char *argv[]) {
 	    cerr<<"If running in bam input/output mode, the size of the chunks (option -z) must be even."<<endl;
 	    return 1;	    
 	}
+    }else if(fastqToBam){
+	if(!fastqoutfile.empty() || !intfastqoutfile.empty() || fastqoutfileb){
+	    cerr<<"Cannot write both BAM (-o or -u) and fastq output."<<endl;
+	    return 1;
+	}
+	if(allowAligned){
+	    cerr<<"ERROR : Cannot specify --allowAligned for fastq"<<endl;
+	    return 1;
+	}
+	if( (sizeChunk%2) != 0){
+	    cerr<<"If writing BAM output, the size of the chunks (option -z) must be even."<<endl;
+	    return 1;
+	}
     }else{
 	int boolCfq= (!fastqoutfile.empty()) + (!intfastqoutfile.empty()) + fastqoutfileb;
 
 	if(boolCfq==0){
-	    cerr<<"If running in fastq input/output mode, the output must specified."<<endl;
+	    cerr<<"If the input is fastq, the output must be specified: -fqo or -fqt for fastq, -o or -u for BAM."<<endl;
 	    return 1;	    	    
 	}
 
@@ -2266,921 +2068,52 @@ int main (int argc, char *argv[]) {
     }
 
 
+    const int fqQualOffset = qualOffset;
+    if(fastqToBam)
+	qualOffset = 33;    //the qualities are converted to those of a BAM file
+
     mtr = new MergeTrimReads(adapter_F,adapter_S,adapter_chimera,
 			     key1,key2,trimKey,ikey,
 			     trimCutoff,allowMissing,ancientDNA,location,scale,useDist,qualOffset,seed,seedSpecified);
-    
-    fqwriters onereadgroup;
-    if(fastqFormat){
-	//TODO
 
-	
-	pthread_mutex_init(&mutexCERR,    NULL);
-	pthread_mutex_init(&mutexQueue,   NULL);
-	pthread_mutex_init(&mutexCounter, NULL);
-	pthread_mutex_init(&mutexRank ,   NULL);
-    
-	pthread_t             thread[numberOfThreads];
-	int                   rc=0;
-
-
-	 
-	struct argspthread *argstopass = (struct argspthread *)malloc(sizeof(struct argspthread));
-	argstopass->singleEndModeFQ = singleEndModeFQ;
-	argstopass->umif            = umif;
-	argstopass->umir            = umir;
-	argstopass->umtf            = umiTf;
-	argstopass->umtr            = umiTr;
-	    
-	for(int i=0;i<numberOfThreads;i++){
-	    //rc = pthread_create(&thread[i], NULL, mainComputationThreadFQ, &singleEndModeFQ);
-	    rc = pthread_create(&thread[i], NULL, mainComputationThreadFQ, (void *)argstopass );
-	    checkResults("pthread_create()\n", rc);
-	}
-
-	if( bamFileOUT != ""  || produceUnCompressedBAM || allowAligned){
-	    cerr<<"ERROR : Cannot specify options like -o, -u or --allowAligned for fastq"<<endl;
-	    return 1;
-	}
-
-	if(fastqfile1 == ""){
-	    cerr<<"ERROR : Must specify as least the first file for fastq"<<endl;
-	    return 1;	    
-	}
-
-
-
-	FastQParser * fqp1;
-	FastQParser * fqp2;
-
-	if(singleEndModeFQ){
-
-	    if(detectAdapt){
-		cerr<<"The automatic detection of the adapters is not yet coded for single-end reads"<<endl;
-		return 1;	    
-	    }
-	    fqp1 = new FastQParser (fastqfile1);
-
-	    if(!fastqoutfile.empty()){
-		string outdirs   = fastqoutfile+".fq.gz";
-		string outdirsf  = fastqoutfile+".fail.fq.gz";
-
-		onereadgroup.single  = new ogzstream();
-		onereadgroup.singlef = new ogzstream();
-		
-		onereadgroup.single->open(outdirs.c_str(), ios::out);
-		onereadgroup.singlef->open(outdirsf.c_str(), ios::out);
-		
-		if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
-		if(!onereadgroup.singlef->good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
-
-	    }else{
-		if(fastqoutfileb){
-
-		    string outdirs   = fastqoutfilese;
-		    string outdirsf  = fastqoutfilesef;
-		    
-		    onereadgroup.single  = new ogzstream();
-		    onereadgroup.singlef = new ogzstream();
-		    
-		    onereadgroup.single->open(outdirs.c_str(), ios::out);
-		    onereadgroup.singlef->open(outdirsf.c_str(), ios::out);
-		    
-		    if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
-		    if(!onereadgroup.singlef->good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
-
-		}else{
-		    string outdirs   = intfastqoutfile;		
-		    onereadgroup.single->open(outdirs.c_str(), ios::out);
-		    onereadgroup.singlef=onereadgroup.single;
-		    
-		    if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
-		}
-	    }
-	    
-	}else{
-	    
-	    fqp1 = new FastQParser (fastqfile1);
-	    fqp2 = new FastQParser (fastqfile2);
-
-	    if(!fastqoutfile.empty()){
-
-		string outdirs   = fastqoutfile+".fq.gz";
-		string outdir1   = fastqoutfile+"_r1.fq.gz";
-		string outdir2   = fastqoutfile+"_r2.fq.gz";
-
-		string outdirsf  = fastqoutfile+".fail.fq.gz";
-		string outdir1f  = fastqoutfile+"_r1.fail.fq.gz";
-		string outdir2f  = fastqoutfile+"_r2.fail.fq.gz";
-		onereadgroup.single  = new ogzstream();
-		onereadgroup.pairr1  = new ogzstream();
-		onereadgroup.pairr2  = new ogzstream();
-
-		onereadgroup.singlef = new ogzstream();
-		onereadgroup.pairr1f = new ogzstream();
-		onereadgroup.pairr2f = new ogzstream();
-		
-		onereadgroup.single->open(outdirs.c_str(), ios::out);
-		onereadgroup.pairr1->open(outdir1.c_str(), ios::out);
-		onereadgroup.pairr2->open(outdir2.c_str(), ios::out);
-
-		onereadgroup.singlef->open(outdirsf.c_str(), ios::out);
-		onereadgroup.pairr1f->open(outdir1f.c_str(), ios::out);
-		onereadgroup.pairr2f->open(outdir2f.c_str(), ios::out);
-
-		if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl;  return 1; }
-		if(!onereadgroup.pairr1->good()){       cerr<<"Cannot write to file "<<outdir1<<endl;  return 1; }
-		if(!onereadgroup.pairr2->good()){       cerr<<"Cannot write to file "<<outdir2<<endl;  return 1; }
-	    
-		if(!onereadgroup.singlef->good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
-		if(!onereadgroup.pairr1f->good()){      cerr<<"Cannot write to file "<<outdir1f<<endl; return 1; }
-		if(!onereadgroup.pairr2f->good()){      cerr<<"Cannot write to file "<<outdir2f<<endl; return 1; }
-
-	    }else{
-
-		if(fastqoutfileb){
-
-		    string outdirs   = fastqoutfilese;
-		    string outdir1   = fastqoutfilepe1;
-		    string outdir2   = fastqoutfilepe2;
-		    
-		    string outdirsf  = fastqoutfilesef;
-		    string outdir1f  = fastqoutfilepe1f;
-		    string outdir2f  = fastqoutfilepe2f;
-		    
-		    onereadgroup.single  = new ogzstream();
-		    onereadgroup.pairr1  = new ogzstream();
-		    onereadgroup.pairr2  = new ogzstream();
-		    
-		    onereadgroup.singlef = new ogzstream();
-		    onereadgroup.pairr1f = new ogzstream();
-		    onereadgroup.pairr2f = new ogzstream();
-		
-		    onereadgroup.single->open(outdirs.c_str(), ios::out);
-		    onereadgroup.pairr1->open(outdir1.c_str(), ios::out);
-		    onereadgroup.pairr2->open(outdir2.c_str(), ios::out);
-
-		    onereadgroup.singlef->open(outdirsf.c_str(), ios::out);
-		    onereadgroup.pairr1f->open(outdir1f.c_str(), ios::out);
-		    onereadgroup.pairr2f->open(outdir2f.c_str(), ios::out);
-
-		    if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl;  return 1; }
-		    if(!onereadgroup.pairr1->good()){       cerr<<"Cannot write to file "<<outdir1<<endl;  return 1; }
-		    if(!onereadgroup.pairr2->good()){       cerr<<"Cannot write to file "<<outdir2<<endl;  return 1; }
-		    
-		    if(!onereadgroup.singlef->good()){      cerr<<"Cannot write to file "<<outdirsf<<endl; return 1; }
-		    if(!onereadgroup.pairr1f->good()){      cerr<<"Cannot write to file "<<outdir1f<<endl; return 1; }
-		    if(!onereadgroup.pairr2f->good()){      cerr<<"Cannot write to file "<<outdir2f<<endl; return 1; }
-		    
-		}else{
-		    
-		    string outdirs   = intfastqoutfile;
-		    onereadgroup.single  = new ogzstream();
-		    
-		    onereadgroup.single->open(outdirs.c_str(), ios::out);
-		    
-		    onereadgroup.pairr1 =onereadgroup.single;
-		    onereadgroup.pairr2 =onereadgroup.single;
-		    onereadgroup.singlef=onereadgroup.single;
-		    onereadgroup.pairr1f=onereadgroup.single;
-		    onereadgroup.pairr2f=onereadgroup.single;
-		    
-		    if(!onereadgroup.single->good()){       cerr<<"Cannot write to file "<<outdirs<<endl; return 1; }
-		}
-	    }
-	}
-
-	unsigned int rank=0;
-
-	DataChunkFQ * currentChunkfq = new DataChunkFQ(rank);
-	unsigned int counter=0;
-	int lastWrittenChunk=-1;
-
-	if(detectAdapt){
-	    //TO add 
-	}
-	
-	//unsigned int totalSeqs=0;
-	while(fqp1->hasData()){
-
-	    FastQObj * fo1=fqp1->getData();
-	    vector<string> def1=allTokens( *(fo1->getID()), ' '  );
-	    string def1s=def1[0];
-	
-
-	    FastQObj * fo2;
-	    string def2s;
-	    string ext2s;
-	    
-	    fqrecord fqtoadd;
-	    if(!singleEndModeFQ){
-		if(!fqp2->hasData()){
-		    cerr << "ERROR: Discrepency between fastq files at record " <<  *(fo1->getID()) <<endl;
-		    return 1;
-		}
-
-		fo2=fqp2->getData();
-		vector<string> def2=allTokens( *(fo2->getID()), ' ' );
-		def2s=def2[0];
-
-
-		if(strEndsWith(def1s,"/1")){
-		    def1s=def1s.substr(0,def1s.size()-2);
-		}
-		if(strEndsWith(def2s,"/2")){
-		    def2s=def2s.substr(0,def2s.size()-2);
-		}
-
-		if(strBeginsWith(def1s,"@")){
-		    def1s=def1s.substr(1,def1s.size()-1);
-		}
-		if(strBeginsWith(def2s,"@")){
-		    def2s=def2s.substr(1,def2s.size()-1);
-		}
-
-
-		if(def1s != def2s){
-		    cerr << "ERROR: Discrepency between fastq files, different names " << *(fo1->getID()) <<" and "<< *(fo2->getID()) <<endl;
-		    return 1;
-		}
-
-		//PAIRED COMPUTATION
-		fqtoadd.paired = true;
-
-		fqtoadd.d1     = def1s;//*(fo1->getID()  );
-		fqtoadd.s1     = *(fo1->getSeq() );
-		fqtoadd.q1     = *(fo1->getQual());
-
-		fqtoadd.d2     = def2s;//*(fo2->getID()  );
-		fqtoadd.s2     = *(fo2->getSeq() );
-		fqtoadd.q2     = *(fo2->getQual());
-		
-	    }else{		
-		//SINGLE COMPUTATION
-		fqtoadd.paired = false;
-
-		fqtoadd.d1     = def1s;//*(fo1->getID());
-		fqtoadd.s1     = *(fo1->getSeq());
-		fqtoadd.q1     = *(fo1->getQual());
-
-	    }
-
-	    
-
-	    if(counter== ( (detectAdapt && (rank==0))?(sizeChunkDefault*10-1):((sizeChunk-1))) ){
-		     
-		currentChunkfq->dataToProcess->push_back(fqtoadd);
-		//cerr<<"sizeChunk "<<sizeChunk<<" counter "<<counter<<endl;
-		if(detectAdapt){
-		    //cerr<<"sizeChunk "<<sizeChunk<<" counter "<<counter<<endl;
-		    bool adpd=detectAdaptFQ( currentChunkfq );		    
-		    if(adpd){//worked
-			detectAdapt=false;			
-		    }else{
-			cerr << "Failed to auto detect adapters, please contact the vendor" << endl;
-			return 1;
-		    }
-		}
-
-		
-		
-		rc = pthread_mutex_lock(&mutexQueue);
-		checkResults("pthread_mutex_lock()\n", rc);
-		//cout<<"got it"<<endl;
-		//cout<<"main addr"<< &(currentChunk->dataToProcess) <<endl;
-		//
-		while(true){
-		    //mutex queue is taken here
-		    if(int(queueDataToprocessFQ.size())>(maxQueueDataToprocessSize)){	  // if queue full
-#ifdef DEBUGSLEEPING
-			int queueSize = int(queueDataToprocessFQ.size());
-#endif
-			
-			//release mutex queue
-			rc = pthread_mutex_unlock(&mutexQueue);
-			checkResults("pthread_mutex_unlock()\n", rc);
-
-			bool hasWritten = checkForWritingLoopFQ(&onereadgroup,&lastWrittenChunk,mtr,umif,umir,umiTf,umiTr);
-			if(!hasWritten){
-#ifdef DEBUGSLEEPING
-			    rc = pthread_mutex_lock(&mutexCERR);
-			    checkResults("pthread_mutex_lock()\n", rc);			
-			    cerr<<"main loop: queue to process is full, capacity: "<<queueSize<<" sleeping for "<<timeThreadSleep<<"s"<<endl;			
-			    rc = pthread_mutex_unlock(&mutexCERR);
-			    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-			    sleep(timeThreadSleep);
-			}
-			
-
-			//take queue mutex
-			rc = pthread_mutex_lock(&mutexQueue);
-			checkResults("pthread_mutex_lock()\n", rc);
-		    }else{
-#ifdef DEBUG 
-			rc = pthread_mutex_lock(&mutexCERR);
-			checkResults("pthread_mutex_lock()\n", rc);			
-			cerr<<"main loop: queue to process has space, adding rank: "<<currentChunkfq->rank<<endl;			
-			rc = pthread_mutex_unlock(&mutexCERR);
-			checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-			queueDataToprocessFQ.push(currentChunkfq);
-
-			rc = pthread_mutex_unlock(&mutexQueue);
-			checkResults("pthread_mutex_unlock()\n", rc);
-			break;
-		    }
-		}
-
-
-
-		rc = pthread_mutex_unlock(&mutexQueue);
-		checkResults("pthread_mutex_unlock()\n", rc);
-
-		rank++;
-
-		checkForWritingLoopFQ(&onereadgroup,&lastWrittenChunk,mtr,umif,umir,umiTf,umiTr);
-	 
-		currentChunkfq = new DataChunkFQ(rank);	    
-		//currentChunk->rank=rank;
-		counter=0;
-	    }else{
-		currentChunkfq->dataToProcess->push_back(fqtoadd);
-
-		counter++;
-	    }
-
-
-
-	    //totalSeqs++;
-	}//for each data record
-    
-	delete fqp1;
-	if(!singleEndModeFQ){
-	    delete fqp2;
-	}
-		    			
-#ifdef DEBUG 
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);
-	
-	cerr<<"main loop: is done"<<endl;
-	
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-
-
-
-	//add last chunk
-	int lastRank=currentChunkfq->rank;
-	queueDataToprocessFQ.push(currentChunkfq);
-	bool wroteEverything=false;
-
-	readDataDone=true;
-	//cout<<"main thread is done reading"<<endl;
-
-	while(!wroteEverything){
-	    //cout<<"write queue size = "<< queueDataTowrite.size() <<endl;
-	    //threads are running here
-	    rc = pthread_mutex_lock(&mutexCounter);
-	    checkResults("pthread_mutex_lock()\n", rc);
-
-	    //#ifdef DEBUG    
-#if defined(DEBUG) ||defined(DEBUGSLEEPING)
-	    int qsize = queueDataTowriteFQ.size(); 
-#endif
-	    //#endif
-
-	    bool wroteData=false;
-	    if(!queueDataTowriteFQ.empty()){
-	
-		DataChunkFQ *  dataToWrite= queueDataTowriteFQ.top();
-		
-		if( lastWrittenChunk == (dataToWrite->rank-1) ){
-		    queueDataTowriteFQ.pop();
-
-		    
-	    
-
-		    rc = pthread_mutex_unlock(&mutexCounter);
-		    checkResults("pthread_mutex_unlock()\n", rc);
-
-#ifdef DEBUG 
-		    rc = pthread_mutex_lock(&mutexCERR);
-		    checkResults("pthread_mutex_lock()\n", rc);	       
-		    cerr<<"final: writing "<<dataToWrite->rank<<" queue size= "<<qsize<<" size of data to write "<<dataToWrite->dataToProcess->size()<<endl;
-		    rc = pthread_mutex_unlock(&mutexCERR);
-		    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-		    for(unsigned int i=0;i<dataToWrite->dataToProcess->size();i++){
-			// cerr<<dataToWrite->dataToProcess->at(i).d1<<endl;
-			if(dataToWrite->dataToProcess->at(i).paired){
-			    
-			    mtr->incrementCountall();
-		    
-			    if(dataToWrite->dataToProcess->at(i).code != ' '){ //keys or chimeras
-			
-				if(dataToWrite->dataToProcess->at(i).code == 'K'){
-				    mtr->incrementCountfkey();
-				}else{
-				    if(dataToWrite->dataToProcess->at(i).code == 'D'){
-					mtr->incrementCountchimera();
-				    }else{
-					if(dataToWrite->dataToProcess->at(i).code == 'U'){//UMI problem, sequence is too short
-					    mtr->incrementCountUMIp();
-					}else{					    
-					    cerr << "leehom: Wrong return code =\""<<dataToWrite->dataToProcess->at(i).code<<"\""<<endl;
-					    exit(1);
-					}
-				    }
-				}
-
-
-				(*onereadgroup.pairr1f)<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s1<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1<<endl;
-
-				(*onereadgroup.pairr2f)<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2" <<dataToWrite->dataToProcess->at(i).cmt<<endl <<dataToWrite->dataToProcess->at(i).s2<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2<<endl;
-				continue;
-		    
-			    }else{
-				if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence			    
-				    (*onereadgroup.single)<<"@"<<dataToWrite->dataToProcess->at(i).d1 << dataToWrite->dataToProcess->at(i).cmt<<endl << dataToWrite->dataToProcess->at(i).sequence<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).quality<<endl;    	    
-			    
-				    if( (dataToWrite->dataToProcess->at(i).sequence.length()+umif+umir+umiTf+umiTr) > max(dataToWrite->dataToProcess->at(i).s1.length(),dataToWrite->dataToProcess->at(i).s2.length()) ){
-					mtr->incrementCountmergedoverlap();
-				    }else{
-					mtr->incrementCountmerged();			  
-				    }
-
-				}else{ //keep as is
-				    mtr->incrementCountnothing();
-				    if(trimKey){
-					(*onereadgroup.pairr1)<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s1.substr( key1.length() )<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1.substr( key1.length() )<<endl;
-					(*onereadgroup.pairr2)<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s2.substr( key2.length() )<<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2.substr( key2.length() )<<endl;
-				    }else{
-					(*onereadgroup.pairr1)<<"@"<<dataToWrite->dataToProcess->at(i).d1<<"/1"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s1                        <<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q1                        <<endl;
-					(*onereadgroup.pairr2)<<"@"<<dataToWrite->dataToProcess->at(i).d2<<"/2"<<dataToWrite->dataToProcess->at(i).cmt <<endl <<dataToWrite->dataToProcess->at(i).s2                        <<endl<<"+"<<endl <<dataToWrite->dataToProcess->at(i).q2                        <<endl;
-				    }
-			    
-				}
-			    }
-		    
-			}else{
-
-		    
-			    if(dataToWrite->dataToProcess->at(i).code != ' '){ //either chimera or missing key
-			
-				if(dataToWrite->dataToProcess->at(i).code == 'K'){
-				    mtr->incrementCountfkey();
-				}else{
-				    if(dataToWrite->dataToProcess->at(i).code == 'D'){
-					mtr->incrementCountchimera();
-				    }else{
-					if(dataToWrite->dataToProcess->at(i).code == 'U'){//UMI problem, sequence is too short
-					    mtr->incrementCountUMIp();
-					}else{					    					    
-					    cerr << "leehom: Wrong return code =\""<<dataToWrite->dataToProcess->at(i).code<<"\""<<endl;
-					    exit(1);
-					}
-				    }
-				}
-			
-				(*onereadgroup.singlef)<<""<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1 <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1 <<endl;
-				continue;
-			    }
-		    
-			    if(dataToWrite->dataToProcess->at(i).sequence != ""){ //new sequence
-				mtr->incrementCounttrimmed();
-				(*onereadgroup.single)<<""<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).sequence <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).quality<<endl;
-			    }else{
-				mtr->incrementCountnothing();
-				if(trimKey){
-				    (*onereadgroup.single)<<""<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1.substr( key1.length() )<<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1.substr( key1.length() )<<endl;
-				}else{
-				    (*onereadgroup.single)<<""<<dataToWrite->dataToProcess->at(i).d1<<""<<dataToWrite->dataToProcess->at(i).cmt <<endl << dataToWrite->dataToProcess->at(i).s1                        <<endl<<"+"<<endl << dataToWrite->dataToProcess->at(i).q1                        <<endl;
-				}
-			    }
-			}
-			
-		    }
-		
-		    wroteData=true;		
-		    lastWrittenChunk=dataToWrite->rank;
-		
-		    if(dataToWrite->rank == lastRank)
-			wroteEverything=true;	
-		    delete dataToWrite;
-		}else{//not the correct rank					
-		    //cout<<"loop: is waiting for chunk "<<lastWrittenChunk<<" but got  "<<(dataToWrite->rank)<<endl;		    
-		    rc = pthread_mutex_unlock(&mutexCounter);
-		    checkResults("pthread_mutex_unlock()\n", rc);
-		}
-
-	    }else{
-		rc = pthread_mutex_unlock(&mutexCounter);
-		    checkResults("pthread_mutex_unlock()\n", rc);
-	    }
-
-	 
-	    if(!wroteData){//if did not write all data, sleep
-
-#ifdef DEBUGSLEEPING
-		rc = pthread_mutex_lock(&mutexCERR);
-		checkResults("pthread_mutex_lock()\n", rc);
-		cerr<<"final: waiting to write, queue size= "<<qsize<<", sleeping for "<<timeThreadSleep<<"s"<<endl;
-		rc = pthread_mutex_unlock(&mutexCERR);
-		checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-		sleep(timeThreadSleep);
-	    }
-
-	}//while did not write everything
-
-
-	//waiting for threads to finish
-	for (int i=0; i <numberOfThreads; ++i) {
-	    rc = pthread_join(thread[i], NULL);
-	    checkResults("pthread_join()\n", rc);
-	}
-
-	pthread_mutex_destroy(&mutexRank);
-	pthread_mutex_destroy(&mutexQueue);
-	pthread_mutex_destroy(&mutexCounter);
-	pthread_mutex_destroy(&mutexCERR);
-
-
-
-	if(singleEndModeFQ){
-	    
-	    if(!fastqoutfile.empty()){
-		onereadgroup.single->close();
-		onereadgroup.singlef->close();
-		delete(onereadgroup.single);
-		delete(onereadgroup.singlef);
-	    }else{
-		onereadgroup.single->close();
-		delete(onereadgroup.single);
-	    }
-	    
-	}else{
-	    if(!fastqoutfile.empty()){
-		onereadgroup.single->close();
-		onereadgroup.pairr1->close();
-		onereadgroup.pairr2->close();
-		
-		onereadgroup.singlef->close();
-		onereadgroup.pairr1f->close();
-		onereadgroup.pairr2f->close();
-
-		delete(onereadgroup.single);
-		delete(onereadgroup.pairr1);
-		delete(onereadgroup.pairr2);
-		
-		delete(onereadgroup.singlef);
-		delete(onereadgroup.pairr1f);
-		delete(onereadgroup.pairr2f);
-		
-	    }else{
-		onereadgroup.single->close();
-		delete(onereadgroup.single);
-	    }
-	}
-    
-	
-	cerr <<mtr->reportSingleLine()<<endl;
-
-	if(printLog){
-	    ofstream fileLog;
-	    fileLog.open(logFileName.c_str());
-
-	    if (fileLog.is_open()){
-		fileLog <<mtr->reportMultipleLines() <<endl;
-
-	    }else{
-		cerr << "Unable to print to file "<<logFileName<<endl;
-	    }
-	    fileLog.close();
-	}
-    
-
-    	//end fastq
-    }else{
-	//else BAM
-
-	if( bamFileOUT == ""  ){
-	    // cerr<<"The output must be a be specified, exiting"<<endl;
-	    // return 1;
-	    bamFileOUT = "/dev/stdout" ;
-	}
-
-
-
-	
-	pthread_mutex_init(&mutexCERR,    NULL);
-	pthread_mutex_init(&mutexQueue,   NULL);
-	pthread_mutex_init(&mutexCounter, NULL);
-	pthread_mutex_init(&mutexRank ,   NULL);
-    
-	pthread_t             thread[numberOfThreads];
-	int                   rc=0;
-
-
-	struct argspthread *argstopass = (struct argspthread *)malloc(sizeof(struct argspthread));
-	argstopass->keepOrig        = keepOrig;
-	argstopass->umif            = umif;
-	argstopass->umir            = umir;
-	argstopass->umtf            = umiTf;
-	argstopass->umtr            = umiTr;
-
-	for(int i=0;i<numberOfThreads;i++){
-	    //	    rc = pthread_create(&thread[i], NULL, mainComputationThread, &keepOrig);
-	    rc = pthread_create(&thread[i], NULL, mainComputationThread, (void *)argstopass);
-	    checkResults("pthread_create()\n", rc);
-	}
-
-
-	// FastQParser * fqp1;
-	// fqp1 = new FastQParser (fastqfile);
-	BamReader reader;
-	BamWriter writer;
-
-	if ( !reader.Open(bamFile) ) {
-	    cerr << "Could not open input BAM file" << bamFile<<endl;
-	    return 1;
-	}
-
-
-	SamHeader       header     = reader.GetHeader();
-	const RefVector references = reader.GetReferenceData();
-    
-	string pID          = "leeHom";   
-	string pName        = "leeHom";   
-	string pCommandLine = "";
-	for(int i=0;i<(argc);i++){
-	    pCommandLine += (string(argv[i])+" ");
-	}
-	putProgramInHeader(&header,pID,pName,pCommandLine,returnGitHubVersion(string(argv[0]),".."));
-
-	//const RefVector references = reader.GetReferenceData();
-	//we will not call bgzip with full compression, good for piping into another program to 
-	//lessen the load on the CPU
-	if(produceUnCompressedBAM) 
-	    writer.SetCompressionMode(BamWriter::Uncompressed);
-
-	if ( !writer.Open(bamFileOUT,header,references) ) {
-	    cerr << "Could not open output BAM file "<<bamFileOUT << endl;
-	    return 1;
-	}
-
-	// if ( !writer.Open(bamfilew,header,references) ) {
-	// 	cerr << "Could not open output BAM file "<<bamfilew << endl;
-	// 	return 1;
-	// }
-
-
-	// ogzstream outfile;
-	// outfile.open(fastqfilew.c_str(), ios::out);
-	// if(!outfile.good()){       cerr<<"Cannot write to file "<<fastqfilew<<endl; return 1; }
-    
-	unsigned int rank=0;
-
-	DataChunk * currentChunk = new DataChunk(rank);
-	unsigned int counter=0;
-	int lastWrittenChunk=-1;
-	// currentChunk->rank=rank;
-
-	BamAlignment al;
-
-
-	
-	while ( reader.GetNextAlignment(al) ) {
-	    
-	    //FastQObj * fo1=fqp1->getData();
-	    //cout<<counter<<"\t"<<currentChunk->dataToProcess->size()<<"\t"<<al.Name<<endl;
-			    
-	    if(al.IsMapped() || al.HasTag("NM") || al.HasTag("MD")  ){
-		if(!allowAligned){
-		    cerr << "Reads should not be aligned" << endl;
-		    return 1;
-		}else{
-		    //should we remove tags ?
-		}
-	    }
-
-	    if( counter== ( (detectAdapt&&(rank==0))?(sizeChunkDefault*10-1):((sizeChunk-1))) ){
-		//if(counter== (sizeChunk-1)){
-		//cerr<<"sizeChunk "<<sizeChunk<<" counter "<<counter<<endl;
-		//store old one
-		currentChunk->dataToProcess->push_back(al);
-
-		if(detectAdapt){
-		    bool adpd=detectAdaptBAM( currentChunk );
-		    if(adpd){//worked
-			detectAdapt=false;			
-		    }else{
-			cerr << "Failed to auto detect adapters, please contact the vendor" << endl;
-			return 1;
-		    }
-		}
-	    
-
-		rc = pthread_mutex_lock(&mutexQueue);
-		checkResults("pthread_mutex_lock()\n", rc);
-		
-		while(true){
-		    //mutex queue is taken here
-		    if(int(queueDataToprocess.size())>(maxQueueDataToprocessSize)){	  // if queue full
-#ifdef DEBUGSLEEPING
-			int queueSize = int(queueDataToprocess.size());
-#endif
-			//release mutex queue
-			rc = pthread_mutex_unlock(&mutexQueue);
-			checkResults("pthread_mutex_unlock()\n", rc);
-
-
-			bool hasWritten = checkForWritingLoop(&writer,&lastWrittenChunk);
-			if(!hasWritten){
-#ifdef DEBUGSLEEPING
-			    rc = pthread_mutex_lock(&mutexCERR);
-			    checkResults("pthread_mutex_lock()\n", rc);
-			    cerr<<"main loop: queue to process is full, capacity: "<<queueSize<<", sleeping for "<<timeThreadSleep<<"s"<<endl;		
-			    rc = pthread_mutex_unlock(&mutexCERR);
-			    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-			    sleep(timeThreadSleep);
-
-			}
-
-			//take queue mutex
-			rc = pthread_mutex_lock(&mutexQueue);
-			checkResults("pthread_mutex_lock()\n", rc);
-		    }else{
-#ifdef DEBUG 
-			rc = pthread_mutex_lock(&mutexCERR);
-			checkResults("pthread_mutex_lock()\n", rc);			
-			cerr<<"main loop: queue to process has space, adding rank: "<<currentChunk->rank<<endl;			
-			rc = pthread_mutex_unlock(&mutexCERR);
-			checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-			queueDataToprocess.push(currentChunk);
-			
-			rc = pthread_mutex_unlock(&mutexQueue);
-			checkResults("pthread_mutex_unlock()\n", rc);
-			break;
-		    }
-		}
-
-		rank++;
-
-		checkForWritingLoop(&writer,&lastWrittenChunk);
-
-		//new one
-		currentChunk = new DataChunk(rank);	    
-		//currentChunk->rank=rank;
-		counter=0;
-	    }else{
-		currentChunk->dataToProcess->push_back(al);
-		counter++;
-	    }
-
-	    // fqrecord toadd;
-	    // toadd.ids  = *(fo1->getID());
-	    // toadd.seqs = *(fo1->getSeq());
-	    // toadd.qual = *(fo1->getQual());
-	}//end bam file has data
-	reader.Close();
-		    			
-#ifdef DEBUG 
-	rc = pthread_mutex_lock(&mutexCERR);
-	checkResults("pthread_mutex_lock()\n", rc);
-	
-	cerr<<"main loop: is done"<<endl;
-	
-	rc = pthread_mutex_unlock(&mutexCERR);
-	checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-
-	//add last chunk
-	int lastRank=currentChunk->rank;
-	queueDataToprocess.push(currentChunk);
-	bool wroteEverything=false;
-
-	readDataDone=true;
-	//cout<<"main thread is done reading"<<endl;
-
-	while(!wroteEverything){
-	    //cout<<"write queue size = "<< queueDataTowrite.size() <<endl;
-	    //threads are running here
-	    rc = pthread_mutex_lock(&mutexCounter);
-	    checkResults("pthread_mutex_lock()\n", rc);
-
-#if defined(DEBUG) ||defined(DEBUGSLEEPING)
-	    int qsize = queueDataTowrite.size(); 
-#endif
-
-	    bool wroteData=false;
-	    if(!queueDataTowrite.empty()){
-	
-		DataChunk *  dataToWrite= queueDataTowrite.top();
-
-		if( lastWrittenChunk == (dataToWrite->rank-1) ){
-		    queueDataTowrite.pop();
-		    rc = pthread_mutex_unlock(&mutexCounter);
-		    checkResults("pthread_mutex_unlock()\n", rc);
-
-#ifdef DEBUG 
-		    rc = pthread_mutex_lock(&mutexCERR);
-		    checkResults("pthread_mutex_lock()\n", rc);	       
-		    cerr<<"final: writing "<<dataToWrite->rank<<" queue size= "<<qsize<<endl;
-		    rc = pthread_mutex_unlock(&mutexCERR);
-		    checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-		    //writing dataToWrite
-		    for(unsigned int i=0;i<dataToWrite->dataToProcess->size();i++){
-			//cout<<"final: writing "<<dataToWrite->dataToProcess->at(i).Name<<endl;
-			writer.SaveAlignment( dataToWrite->dataToProcess->at(i) );
-			// outfile<< dataToWrite->dataToProcess->at(i).Name
-			// 	   << endl  
-			// 	   << dataToWrite->dataToProcess->at(i).QueryBases << endl
-			// 	   << "+" <<endl 
-			// 	   << dataToWrite->dataToProcess->at(i).Qualities << endl;
-		    }
-		
-		    wroteData=true;		
-		    lastWrittenChunk=dataToWrite->rank;
-		
-		    if(dataToWrite->rank == lastRank)
-			wroteEverything=true;	
-		    delete dataToWrite;
-		}else{//not the correct rank					
-		    //cout<<"loop: is waiting for chunk "<<lastWrittenChunk<<" but got  "<<(dataToWrite->rank)<<endl;		    
-		    rc = pthread_mutex_unlock(&mutexCounter);
-		    checkResults("pthread_mutex_unlock()\n", rc);
-		}
-
-	    }else{
-		rc = pthread_mutex_unlock(&mutexCounter);
-		    checkResults("pthread_mutex_unlock()\n", rc);
-	    }
-
-	 
-	    if(!wroteData){//if did not write all data, sleep
-
-#ifdef DEBUGSLEEPING
-		rc = pthread_mutex_lock(&mutexCERR);
-		checkResults("pthread_mutex_lock()\n", rc);     
-		cerr<<"final: waiting to write, queue size= "<<qsize<<", sleeping for "<<timeThreadSleep<<"s"<<endl;
-		rc = pthread_mutex_unlock(&mutexCERR);
-		checkResults("pthread_mutex_unlock()\n", rc);
-#endif
-
-		sleep(timeThreadSleep);
-	    }
-
-	}//while did not write everything
-
-
-	//waiting for threads to finish
-	for (int i=0; i <numberOfThreads; ++i) {
-	    rc = pthread_join(thread[i], NULL);
-	    checkResults("pthread_join()\n", rc);
-	}
-
-	pthread_mutex_destroy(&mutexRank);
-	pthread_mutex_destroy(&mutexQueue);
-	pthread_mutex_destroy(&mutexCounter);
-	pthread_mutex_destroy(&mutexCERR);
-	writer.Close();
-
-	cerr <<mtr->reportSingleLine()<<endl;
-
-	if(printLog){
-	    ofstream fileLog;
-	    fileLog.open(logFileName.c_str());
-
-	    if (fileLog.is_open()){
-		fileLog <<mtr->reportMultipleLines() <<endl;
-
-	    }else{
-		cerr << "Unable to print to file "<<logFileName<<endl;
-	    }
-	    fileLog.close();
-	}
-    
-	pthread_exit(NULL);
-    }
-
-
-    delete mtr;
-    return 0;
+    mtr->setQuick(quickBases, quickFraction);
+
+    Settings S;
+    S.gzLevel                = gzLevel;
+    S.keepOrig               = keepOrig;
+    S.umif                   = umif;
+    S.umir                   = umir;
+    S.umiTf                  = umiTf;
+    S.umiTr                  = umiTr;
+    S.detectAdapt            = detectAdapt;
+    S.trimKey                = trimKey;
+    S.key1                   = key1;
+    S.key2                   = key2;
+    S.printLog               = printLog;
+    S.logFileName            = logFileName;
+    S.allowAligned           = allowAligned;
+    S.produceUnCompressedBAM = produceUnCompressedBAM;
+    S.bamFile                = bamFile;
+    S.bamFileOUT             = bamFileOUT;
+    S.fastqToBam             = fastqToBam;
+    S.fqQualOffset           = fqQualOffset;
+    S.singleEndModeFQ        = singleEndModeFQ;
+    S.fastqfile1             = fastqfile1;
+    S.fastqfile2             = fastqfile2;
+    S.fastqoutfile           = fastqoutfile;
+    S.fastqoutfileb          = fastqoutfileb;
+    S.fastqoutfilese         = fastqoutfilese;
+    S.fastqoutfilesef        = fastqoutfilesef;
+    S.fastqoutfilepe1        = fastqoutfilepe1;
+    S.fastqoutfilepe1f       = fastqoutfilepe1f;
+    S.fastqoutfilepe2        = fastqoutfilepe2;
+    S.fastqoutfilepe2f       = fastqoutfilepe2f;
+    S.intfastqoutfile        = intfastqoutfile;
+    for(int k=0;k<6;k++)
+	S.sidx[k] = k;
+
+    if(fastqFormat && !fastqToBam)
+	return runFastq(S);
+
+    return runBam(S, argc, argv);
 }
-

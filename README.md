@@ -13,12 +13,13 @@ Go to https://github.com/grenaud/leeHom and do one of the following:
 2. [Download the ZIP archive](https://github.com/grenaud/leeHom/archive/master.zip) and then manually download the submodules
 
 ## Installation:
-Make sure you have `cmake` installed. If required, install it by typing `apt-get install cmake` for Ubuntu for example. You also need JsonCpp which can be installed via `apt-get install libjsoncpp-dev`
+Make sure you have `autoconf` and zlib (`zlib1g-dev`) installed, e.g. `apt-get install autoconf zlib1g-dev` on Ubuntu. The BAM files are read and written with [htslib](https://github.com/samtools/htslib), which is built from the submodule.
 
 1. Build the submodules and main code by typing :
    
     make
    
+To use an htslib that is already installed, type `make HTSLIBINC=/path/to/include-parent HTSLIBLIB=/path/to/lib`. `make test` runs the tests.
 
 ## Running the program:
 To launch the program simply type:
@@ -28,6 +29,18 @@ src/leeHom
 
 
 
+
+## Running faster
+- `-t [threads]` uses several cores. The output is the same, and in the same order as the input, whatever the number of threads (use `--seed` to also fix the random choice between equally good bases).
+- `--quick` makes the most expensive step faster, at the price of a very small loss in sensitivity. leeHom compares every possible position of the adapter, and for each one it adds the log likelihood of every pair of overlapping bases. With `--quick`, once a position has compared its first `--quickbases` bases (default 12) it is only computed in full if the likelihood reached so far is clearly better than what random sequences would give. Otherwise the remaining terms are added as their expected value under random sequences (3/4 mismatches, 1/4 matches), so the number of terms of the likelihood is unchanged. `--quickfraction [0-1]` sets how far between the likelihood of random sequences (0) and of a perfect overlap (1) a position must be at that point (default 0.4).
+  `--quick` only speeds up the likelihood computation, and the gain is modest: on simulated 75 bp reads (1M pairs, one thread, output not compressed) the defaults are 5 to 7% faster, `--quickbases 12 --quickfraction 0.5` about 10% faster (about 0.1% of the merged pairs are kept as pairs instead), and the most aggressive settings (about 25%) lose over 10% of the merges. A `--quickfraction` of 0, the literal "below what random sequences give" rule, is slower than not using `--quick`. Larger `--quickbases` or smaller `--quickfraction` are more cautious and give less speedup.
+- `--gzlevel [0-9]` sets the compression level of the output (fastq or BAM). When most reads are written compressed, compression is often more than half of the CPU time: `--gzlevel 1` is much faster than the default (6 for fastq) for files about 20% bigger.
+
+## Fastq input, BAM output
+With fastq input, `-o [file]` (or `-u` for an uncompressed BAM on standard output, good for a pipe) writes an unaligned BAM instead of the fastq files, with the mates of a pair consecutive (flags 77 and 141) and single reads with flag 4. It cannot be combined with `-fqo`/`-fqt`. The reads are the same as in the fastq output and in the same order as the input. `--phred64` is supported. Example:
+```
+src/leeHom --ancientdna -fq1 reads_1.fq.gz -fq2 reads_2.fq.gz -t 4 -u | samtools sort -o sorted.bam -
+```
 
 ## Interpreting the output using the fastq mode
 If the input is fastq, the output will also be fastq. Normally you will get different files. Here is a table explaining their meaning/content. The **[PREFIX]** is the output prefix specified using -fqo.

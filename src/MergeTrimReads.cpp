@@ -1,4 +1,7 @@
 #include "MergeTrimReads.h"
+#include <cstring>
+#include <cstdlib>
+#include <unistd.h>
 
 
 //#define DEBUG2
@@ -169,6 +172,15 @@ inline string MergeTrimReads::revcompl(const string seq){
 */
 void MergeTrimReads::initMerge(){
 
+    //entries outside of [qualOffset,qualOffset+MAXQCSCORE) are never meant to be used, keep them defined
+    memset(likeMatch,         0, sizeof(likeMatch));
+    memset(likeMismatch,      0, sizeof(likeMismatch));
+    memset(likeMatchProb,     0, sizeof(likeMatchProb));
+    memset(likeMismatchProb,  0, sizeof(likeMismatchProb));
+    memset(likeMatchPair,     0, sizeof(likeMatchPair));
+    memset(likeMismatchPair,  0, sizeof(likeMismatchPair));
+    memset(probForQual,       0, sizeof(probForQual));
+
     likeRandomMatchProb          =  1.0/4.0 ;
     likeRandomMisMatchProb       =  3.0/4.0 ;
 
@@ -298,6 +310,17 @@ void MergeTrimReads::initMerge(){
 #endif
 
 
+    //combined tables for the kernels
+    const int NQ = 64+MAXQCSCORE;
+    for(int q=0;q<NQ;q++){
+	adapterTab[q]    = likeMismatch[q];
+	adapterTab[NQ+q] = likeMatch[q];
+	for(int q2=0;q2<NQ;q2++){
+	    overlapTab[(q*2+0)*NQ+q2] = likeMismatchPair[q][q2];
+	    overlapTab[(q*2+1)*NQ+q2] = likeMatchPair[q][q2];
+	}
+    }
+
     if(useDist){
 	//compute pdf and cdf for sequences	
 	for(int i=0;i<MAXLENGTHSEQUENCE;i++){
@@ -409,23 +432,49 @@ void MergeTrimReads::initMerge(){
   \return Random double
 */
 inline double MergeTrimReads::randomGen(){
-    //    static bool initialized = false;
-
-    
-    if(initialized == false){
-	if(seedSpecified){
-	    srand(seed);
-	}else{
-	    //use time of day as seed
-	    struct timeval time;
-	    gettimeofday(&time,NULL);
-	    srand(time.tv_usec);
+    if(legacyRng){
+	if(initialized == false){
+	    if(seedSpecified){
+		srand(seed);
+	    }else{
+		//use time of day as seed
+		struct timeval time;
+		gettimeofday(&time,NULL);
+		srand(time.tv_usec);
+	    }
+	    initialized=true;
 	}
-	initialized=true;
-	return  (double(rand())/double(RAND_MAX));	
-    }else{
-	return  (double(rand())/double(RAND_MAX));       
+	return  (double(rand())/double(RAND_MAX));
     }
+
+    //xorshift64*
+    rngState ^= rngState >> 12;
+    rngState ^= rngState << 25;
+    rngState ^= rngState >> 27;
+    const uint64_t r = rngState * 2685821657736338717ULL;
+    return double(r >> 11) * (1.0/9007199254740992.0);   //[0,1)
+}
+
+
+void MergeTrimReads::setRandomContext(uint64_t clusterIndex){
+    //splitmix64 of (seed, index)
+    uint64_t z = baseSeed + (clusterIndex+1)*0x9E3779B97F4A7C15ULL;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    z =  z ^ (z >> 31);
+    rngState = (z != 0) ? z : 0x9E3779B97F4A7C15ULL;
+}
+
+
+void MergeTrimReads::addCounts(const MergeTrimReads & other){
+    count_all            += other.count_all;
+    count_fkey           += other.count_fkey;
+    count_merged         += other.count_merged;
+    count_merged_overlap += other.count_merged_overlap;
+    count_trimmed        += other.count_trimmed;
+    count_nothing        += other.count_nothing;
+    count_chimera        += other.count_chimera;
+    count_UMIp           += other.count_UMIp;
 }
 
 
@@ -648,7 +697,7 @@ void MergeTrimReads::set_adapter_sequences(const string& forward, const string& 
 	options_adapter_S += "I";
     }
 
-
+    chimeraLanes.build(adapter_chimeras);
 }
    
 
@@ -922,6 +971,80 @@ inline double MergeTrimReads::measureOverlap(const string      & read1,
 
 
     
+
+
+//! The scalar definition of the quick mode for one candidate, see Kernels.h
+/*!
+  Same as measureOverlap() for the first quickBases compared bases. If the likelihood of those is below what random
+  sequences give, the remaining terms are added as their expected value (they are as many as before), otherwise
+  the computation goes on as in measureOverlap().
+*/
+inline double MergeTrimReads::measureOverlapQuick(const string      & read1,
+						  const string      & qual1,
+						  const string      & read2,
+						  const string      & qual2,
+						  unsigned int        offsetRead){
+    const int N    = quickBases;
+    const int len1 = int(read1.size());
+    const int len2 = int(read2.size());
+    const int k    = int(offsetRead);
+    const int A    = max(0, k - len2);
+    const int Ev   = min(k, len1);
+    const int nv   = Ev - A;
+
+    //the candidates are looked at in groups of QUICK_GROUP consecutive ones, all at the same step
+    const int k0   = k - (k % leehom::QUICK_GROUP);
+    const int cp   = max(0, k0 + leehom::QUICK_GROUP - 1 - len2) + N;
+    const int n    = cp - A;                                  //number of compared bases
+
+    int dummy = 0;
+    if(N <= 0 || Ev <= cp)
+	return measureOverlap(read1, qual1, read2, qual2, 0, offsetRead, &dummy);
+
+    double s = 0.0;
+    for(int i=0;i<A;i++)
+	s += likeRandomMatch;
+    const double s0 = s;
+
+    int sum1 = 0, sum2 = 0;
+    for(int j=A; j<cp; j++){
+	const int i2 = len2 - k + j;
+	if(read1[j] == read2[i2]){
+	    s += likeMatchPair[   qual1[j] ][ qual2[i2] ];
+	}else{
+	    s += likeMismatchPair[ qual1[j] ][ qual2[i2] ];
+	}
+	s += likeRandomMatch;
+	sum1 += int((unsigned char) qual1[j]);
+	sum2 += int((unsigned char) qual2[i2]);
+    }
+
+    const int    qa1 = sum1 / n;
+    const int    qa2 = sum2 / n;
+    const double E   = leehom::quickExpected(overlapTab, qa1, qa2);
+    if( (s - s0) < leehom::quickThreshold(overlapTab, qa1, qa2, n, likeRandomMatch, quickFraction) ){
+	const double nvl = double(nv - n);
+	s += nvl * E;
+	s += nvl * likeRandomMatch;
+	s += double(k - Ev) * likeRandomMatch;
+	return s;
+    }
+
+    for(int j=cp; j<k; j++){
+	if(j < len1){
+	    const int i2 = len2 - k + j;
+	    if(read1[j] == read2[i2]){
+		s += likeMatchPair[   qual1[j] ][ qual2[i2] ];
+	    }else{
+		s += likeMismatchPair[ qual1[j] ][ qual2[i2] ];
+	    }
+	    s += likeRandomMatch;
+	}else{
+	    s += likeRandomMatch;
+	}
+    }
+    return s;
+}
 
 
 //! Computes the likelihood of a observing the adapter in a read
@@ -1215,6 +1338,21 @@ inline bool MergeTrimReads::checkChimera(const string & read1,
 					 merged & toReturn, 
 					 const double & logLikelihoodTotal){
 
+    if(!referenceKernels){
+	//all the sequences and offsets at once
+	static thread_local vector<double> lanes;
+	lanes.resize(chimeraLanes.nlanes);
+	leehom::chimeraScan(kernelTables(), chimeraLanes, read1.data(), qualv1.data(), int(read1.length()), &lanes[0]);
+	for(size_t lane=0; lane<lanes.size(); lane++){
+	    if( lanes[lane] > logLikelihoodTotal ){
+		toReturn.code    ='D';
+		toReturn.sequence="";
+		toReturn.quality ="";
+		return true;
+	    }
+	}
+	return false;
+    }
 
     for(unsigned int indexChimera=0;indexChimera<adapter_chimeras.size();indexChimera++){
 	
@@ -1296,7 +1434,7 @@ inline bool MergeTrimReads::checkChimera(const string & read1,
   \param sndlogLikelihoodTotalIdx  Index of second best likelihood found for all indices
 
 */
-inline void MergeTrimReads::computeBestLikelihoodSingle(const string      & read1,
+inline void MergeTrimReads::computeBestLikelihoodSingleReference(const string      & read1,
 							const string      & qualv1,
 							double & logLikelihoodTotal,
 							int    & logLikelihoodTotalIdx,
@@ -1402,7 +1540,7 @@ inline void MergeTrimReads::computeBestLikelihoodSingle(const string      & read
 
 */
 
-inline void MergeTrimReads::computeBestLikelihoodPairedEnd(const string & read1,
+inline void MergeTrimReads::computeBestLikelihoodPairedEndReference(const string & read1,
 							   const string & qualv1,
 
 							   const string & read2,
@@ -1449,6 +1587,12 @@ inline void MergeTrimReads::computeBestLikelihoodPairedEnd(const string & read1,
 
 	
 	//overlap
+	if(quickBases > 0){
+	    int ignored = 0;
+	    logLike  +=	 measureOverlapQuick(read1, qualv1, read2_rev, qualv2_rev, indexAdapter);
+	    measureOverlap(read1, qualv1, read2_rev, qualv2_rev, maxLengthForPair, indexAdapter, &ignored);  //the matches
+	    matches += ignored;
+	}else{
 	logLike  +=	 measureOverlap(   read1      ,
 					   qualv1     ,
 					   read2_rev  ,
@@ -1456,6 +1600,7 @@ inline void MergeTrimReads::computeBestLikelihoodPairedEnd(const string & read1,
 					   maxLengthForPair,					      
 					   indexAdapter,
 					   &matches);
+	}
 	//adding prior
 	if(useDist){
 	    //logLike += logcomppdf(location,scale,indexAdapter);
@@ -1488,6 +1633,279 @@ inline void MergeTrimReads::computeBestLikelihoodPairedEnd(const string & read1,
 
     }
     
+}
+
+
+//! Pointers to the tables used by the vectorized kernels
+leehom::KernelTables MergeTrimReads::kernelTables() const {
+    leehom::KernelTables kt;
+    kt.adapterTab        = adapterTab;
+    kt.overlapTab        = overlapTab;
+    kt.randMatch         = likeRandomMatch;
+    kt.fastModeThreshold = log10fastModeProbError;
+    kt.maxAdapterComp    = maxadapter_comp;
+    kt.quickBases        = quickBases;
+    kt.quickFraction     = quickFraction;
+    return kt;
+}
+
+
+//! Computes all likelihoods for single-end reads
+/*!
+  Same as computeBestLikelihoodSingleReference() and returning identical values, but the likelihoods for
+  all adapter indices are first computed together by adapterScan(), then the best and second best are selected.
+*/
+inline void MergeTrimReads::computeBestLikelihoodSingle(const string      & read1,
+							const string      & qualv1,
+							double & logLikelihoodTotal,
+							int    & logLikelihoodTotalIdx,
+							double & sndlogLikelihoodTotal,
+							int    & sndlogLikelihoodTotalIdx){
+    if(referenceKernels){
+	computeBestLikelihoodSingleReference(read1,qualv1,logLikelihoodTotal,logLikelihoodTotalIdx,sndlogLikelihoodTotal,sndlogLikelihoodTotalIdx);
+	return;
+    }
+
+    const size_t lenR = read1.length();
+    if(lenR <= options_trimCutoff)
+	return;
+    const int count = int(lenR - options_trimCutoff);
+
+    static thread_local vector<double> ll;
+    ll.resize(count);
+    for(int i=0;i<count;i++)
+	ll[i] = double(i) * likeRandomMatch;    //likelihood of remaining bases, before adapter
+
+    leehom::adapterScan(kernelTables(), read1.data(), qualv1.data(), int(lenR), options_adapter_F.data(), int(options_adapter_F.length()), count, &ll[0]);
+
+    for(int indexAdapter=0; indexAdapter<count; indexAdapter++){
+	double logLike = ll[indexAdapter];
+
+	if(useDist){
+	    logLike += pdfDist[indexAdapter];
+	}
+
+	if(logLikelihoodTotal < logLike){
+	    sndlogLikelihoodTotal        = logLikelihoodTotal;
+	    sndlogLikelihoodTotalIdx     = logLikelihoodTotalIdx;
+
+	    logLikelihoodTotal           = logLike;
+	    logLikelihoodTotalIdx        = indexAdapter;
+	}else{
+	    if(sndlogLikelihoodTotal < logLike){ //not more likely than first but more likely than second
+		sndlogLikelihoodTotal        = logLike;
+		sndlogLikelihoodTotalIdx     = indexAdapter;
+	    }
+	}
+    }
+}
+
+
+//! Computes all likelihoods for paired-end reads
+/*!
+  Same as computeBestLikelihoodPairedEndReference() and returning identical values, see computeBestLikelihoodSingle()
+*/
+inline void MergeTrimReads::computeBestLikelihoodPairedEnd(const string & read1,
+							   const string & qualv1,
+
+							   const string & read2,
+							   const string & qualv2,
+
+							   const string & read2_rev,
+							   const string & qualv2_rev,
+
+							   const int & lengthRead1,
+							   const int & lengthRead2,
+							   const int & maxLengthForPair,
+
+							   double & logLikelihoodTotal,
+							   int    & logLikelihoodTotalIdx,
+							   int    & logLikelihoodTotalMatches,
+
+							   double & sndlogLikelihoodTotal,
+							   int    & sndlogLikelihoodTotalIdx,
+							   int    & sndlogLikelihoodTotalMatches){
+    if(referenceKernels){
+	computeBestLikelihoodPairedEndReference(read1,qualv1,read2,qualv2,read2_rev,qualv2_rev,lengthRead1,lengthRead2,maxLengthForPair,
+						logLikelihoodTotal,logLikelihoodTotalIdx,logLikelihoodTotalMatches,
+						sndlogLikelihoodTotal,sndlogLikelihoodTotalIdx,sndlogLikelihoodTotalMatches);
+	return;
+    }
+
+    int count = int(2*maxLengthForPair-min_overlap_seqs);
+    if(!ancientDNA)                                  //no point in continuing after a partial overlap
+	count = min(count, maxLengthForPair+1);
+    if(count <= 0)
+	return;
+
+    static thread_local vector<double> ll;
+    ll.assign(count,0.0);
+
+    const leehom::KernelTables kt = kernelTables();
+
+    //adapters
+    leehom::adapterScan(kt, read1.data(), qualv1.data(), lengthRead1, options_adapter_F.data(), int(options_adapter_F.length()), min(count,lengthRead1), &ll[0]);
+    leehom::adapterScan(kt, read2.data(), qualv2.data(), lengthRead2, options_adapter_S.data(), int(options_adapter_S.length()), min(count,lengthRead2), &ll[0]);
+    //overlap
+    leehom::overlapScan(kt, read1.data(), qualv1.data(), lengthRead1, read2_rev.data(), qualv2_rev.data(), lengthRead2, count, &ll[0]);
+
+    const int entryBestIdx   = logLikelihoodTotalIdx;
+    const int entrySecondIdx = sndlogLikelihoodTotalIdx;
+
+    for(int indexAdapter=0; indexAdapter<count; indexAdapter++){
+	double logLike = ll[indexAdapter];
+
+	//adding prior
+	if(useDist){
+	    logLike +=  pdfDist[indexAdapter];
+	}
+
+	if(logLikelihoodTotal < logLike){
+	    sndlogLikelihoodTotal        = logLikelihoodTotal;
+	    sndlogLikelihoodTotalIdx     = logLikelihoodTotalIdx;
+
+	    logLikelihoodTotal           = logLike;
+	    logLikelihoodTotalIdx        = indexAdapter;
+	}else{
+	    if(sndlogLikelihoodTotal < logLike){ //not more likely than first but more likely than second
+		sndlogLikelihoodTotal        = logLike;
+		sndlogLikelihoodTotalIdx     = indexAdapter;
+	    }
+	}
+    }
+
+    //The number of matches is only needed for the best and the second best indices. It is a function of the index
+    //alone, hence it is counted now instead of for all the indices
+    if(logLikelihoodTotalIdx != entryBestIdx)
+	logLikelihoodTotalMatches    = countMatchesPE(read1, qualv1, read2, qualv2, read2_rev, qualv2_rev, lengthRead1, lengthRead2, maxLengthForPair, logLikelihoodTotalIdx);
+    if(sndlogLikelihoodTotalIdx != entrySecondIdx)
+	sndlogLikelihoodTotalMatches = countMatchesPE(read1, qualv1, read2, qualv2, read2_rev, qualv2_rev, lengthRead1, lengthRead2, maxLengthForPair, sndlogLikelihoodTotalIdx);
+}
+
+
+//! Number of matching bases when the adapter starts at indexAdapter
+int MergeTrimReads::countMatchesPE(const string & read1, const string & qualv1,
+				   const string & read2, const string & qualv2,
+				   const string & read2_rev, const string & qualv2_rev,
+				   const int & lengthRead1, const int & lengthRead2, const int & maxLengthForPair,
+				   int indexAdapter){
+    int matches = 0;
+    if(indexAdapter < 0)
+	return matches;
+    if(indexAdapter<lengthRead1)
+	detectAdapter(read1, qualv1, options_adapter_F, indexAdapter, &matches);
+    if(indexAdapter<lengthRead2)
+	detectAdapter(read2, qualv2, options_adapter_S, indexAdapter, &matches);
+    measureOverlap(read1, qualv1, read2_rev, qualv2_rev, maxLengthForPair, indexAdapter, &matches);
+    return matches;
+}
+
+
+void MergeTrimReads::debugLikelihoodsPE(const string & read1, const string & qualv1,
+					const string & read2, const string & qualv2,
+					bool reference, vector<double> & ll){
+    const string read2_rev = revcompl(read2);
+    const string qual2_rev(qualv2.rbegin(), qualv2.rend());
+    const int lengthRead1 = int(read1.size());
+    const int lengthRead2 = int(read2.size());
+    const int maxLengthForPair = max(lengthRead1,lengthRead2);
+
+    int count = int(2*maxLengthForPair-min_overlap_seqs);
+    if(!ancientDNA)
+	count = min(count, maxLengthForPair+1);
+    if(count < 0)
+	count = 0;
+
+    ll.assign(count, 0.0);
+
+    if(reference){
+	for(int idx=0; idx<count; idx++){
+	    double logLike = 0.0;
+	    int    m       = 0;
+	    if(idx<lengthRead1)
+		logLike += detectAdapter(read1, qualv1, options_adapter_F, idx, &m);
+	    if(idx<lengthRead2)
+		logLike += detectAdapter(read2, qualv2, options_adapter_S, idx, &m);
+	    if(quickBases > 0){
+		logLike += measureOverlapQuick(read1, qualv1, read2_rev, qual2_rev, idx);
+	    }else{
+		logLike += measureOverlap(read1, qualv1, read2_rev, qual2_rev, maxLengthForPair, idx, &m);
+	    }
+	    ll[idx] = logLike;
+	}
+    }else{
+	const leehom::KernelTables kt = kernelTables();
+	if(count > 0){
+	    leehom::adapterScan(kt, read1.data(), qualv1.data(), lengthRead1, options_adapter_F.data(), int(options_adapter_F.length()), min(count,lengthRead1), &ll[0]);
+	    leehom::adapterScan(kt, read2.data(), qualv2.data(), lengthRead2, options_adapter_S.data(), int(options_adapter_S.length()), min(count,lengthRead2), &ll[0]);
+	    leehom::overlapScan(kt, read1.data(), qualv1.data(), lengthRead1, read2_rev.data(), qual2_rev.data(), lengthRead2, count, &ll[0]);
+	}
+    }
+}
+
+
+void MergeTrimReads::debugLikelihoodsSR(const string & read1, const string & qualv1,
+					bool reference, vector<double> & ll){
+    const size_t lenR = read1.length();
+    const int count = (lenR > options_trimCutoff) ? int(lenR - options_trimCutoff) : 0;
+
+    ll.assign(count, 0.0);
+
+    if(reference){
+	for(int idx=0; idx<count; idx++){
+	    int m = 0;
+	    ll[idx] = (double(idx) * likeRandomMatch) + detectAdapter(read1, qualv1, options_adapter_F, idx, &m);
+	}
+    }else{
+	for(int idx=0; idx<count; idx++)
+	    ll[idx] = double(idx) * likeRandomMatch;
+	if(count > 0)
+	    leehom::adapterScan(kernelTables(), read1.data(), qualv1.data(), int(lenR), options_adapter_F.data(), int(options_adapter_F.length()), count, &ll[0]);
+    }
+}
+
+
+void MergeTrimReads::debugChimera(const string & read1, const string & qualv1, bool reference, vector<double> & out){
+    out.assign(chimeraLanes.nlanes, 0.0);
+    if(reference){
+	for(size_t c=0;c<adapter_chimeras.size();c++){
+	    out[2*c]   = detectChimera(read1, qualv1, adapter_chimeras[c], 0);
+	    out[2*c+1] = detectChimera(read1, qualv1, adapter_chimeras[c], 1);
+	}
+    }else if(chimeraLanes.nlanes > 0){
+	leehom::chimeraScan(kernelTables(), chimeraLanes, read1.data(), qualv1.data(), int(read1.length()), &out[0]);
+    }
+}
+
+
+void MergeTrimReads::debugBestPE(const string & read1, const string & qual1,
+				 const string & read2, const string & qual2,
+				 bool reference,
+				 double & best, int & bestIdx, int & bestMatches,
+				 double & second, int & secondIdx, int & secondMatches){
+    const string read2_rev = revcompl(read2);
+    const string qual2_rev(qual2.rbegin(), qual2.rend());
+    const int lengthRead1 = int(read1.size());
+    const int lengthRead2 = int(read2.size());
+    const int maxLengthForPair = max(lengthRead1,lengthRead2);
+
+    //the state process_PE() starts the search from
+    best        = double(lengthRead2)*likeRandomMatch + double(lengthRead1)*likeRandomMatch;
+    if(useDist)
+	best += cdfDist[ (2*maxLengthForPair-min_overlap_seqs) ];
+    bestIdx     = -1;
+    bestMatches = 0;
+    second        = -DBL_MAX;
+    secondIdx     = -1;
+    secondMatches = 0;
+
+    if(reference){
+	computeBestLikelihoodPairedEndReference(read1, qual1, read2, qual2, read2_rev, qual2_rev, lengthRead1, lengthRead2, maxLengthForPair,
+						best, bestIdx, bestMatches, second, secondIdx, secondMatches);
+    }else{
+	computeBestLikelihoodPairedEnd(read1, qual1, read2, qual2, read2_rev, qual2_rev, lengthRead1, lengthRead2, maxLengthForPair,
+				       best, bestIdx, bestMatches, second, secondIdx, secondMatches);
+    }
 }
 
 
@@ -2004,14 +2422,14 @@ inline string MergeTrimReads::sortUniqueChar(string v){
 
 //! Subroutine to add extra bam flags
 /*!
-  This subroutine sets the MERGEDBAMFLAG bam flag in for the BamAlignment.
+  This subroutine sets the MERGEDBAMFLAG bam flag in for the BamRecord.
   If the flag is already present, it will remove it
 
-  \param al The BamAlignment object where the flags will be added
+  \param al The BamRecord object where the flags will be added
   \param f an int for the type of flag to add
   \return true iff successful
 */
-bool MergeTrimReads::set_extra_flag( BamAlignment &al, int32_t f )
+bool MergeTrimReads::set_extra_flag( BamRecord &al, int32_t f )
 {
     char tp=0;
     if(!al.GetTagType(MERGEDBAMFLAG,tp)) {
@@ -2087,6 +2505,20 @@ MergeTrimReads::MergeTrimReads (const string& forward_, const string& reverse_, 
  {
      
      initialized = false;
+
+     quickBases       = 0;
+     quickFraction    = 0.4;
+     referenceKernels = (getenv("LEEHOM_REFERENCE") != NULL);
+     legacyRng        = (getenv("LEEHOM_LEGACY_RNG") != NULL);
+
+     if(seedSpecified){
+	 baseSeed = seed;
+     }else{
+	 struct timeval tv;
+	 gettimeofday(&tv,NULL);
+	 baseSeed = (uint64_t(tv.tv_sec) << 20) ^ uint64_t(tv.tv_usec) ^ (uint64_t(getpid()) << 40);
+     }
+     setRandomContext(0);
 
      if(!ikey.empty()){
 	 len_ikey=ikey.size();
@@ -2188,8 +2620,8 @@ MergeTrimReads::~MergeTrimReads (){
 }
 
 
-void MergeTrimReads::bamAlgnToString( BamAlignment & al ,
-				      BamAlignment & al2,
+void MergeTrimReads::bamAlgnToString( BamRecord & al ,
+				      BamRecord & al2,
 				      string & read1,
 				      string & read2,
 				      string & qual1,
@@ -2312,12 +2744,12 @@ string MergeTrimReads::mlConsensus(vector<string> & adapterSeqs, vector< string 
 //! Infer the adapter sequence for paired-end reads 
 /*!
   
-  \param al BamAlignment object as input representing the first pair
-  \param al2 BamAlignment object as input representing the first pair
+  \param al BamRecord object as input representing the first pair
+  \param al2 BamRecord object as input representing the first pair
   \return True if the pair was merged and is contained within al only
 */
 
-void MergeTrimReads::inferadaptPairBAM( BamAlignment & al, BamAlignment & al2, vector<string> & adapterSeqs_fwd, vector< string  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< string > & qualadaptSeq_rev){
+void MergeTrimReads::inferadaptPairBAM( BamRecord & al, BamRecord & al2, vector<string> & adapterSeqs_fwd, vector< string  > & qualadaptSeq_fwd,vector<string> & adapterSeqs_rev, vector< string > & qualadaptSeq_rev){
 
     string read1;
     string read2;
@@ -2498,16 +2930,16 @@ void  MergeTrimReads::inferadaptPair(   string & read1,string & read2,string & q
 
 //! Processes the reads for paired-end reads 
 /*!
-  This subroutine will call process_PE() on the sequence and return a pair<> of BamAlignment objects
+  This subroutine will call process_PE() on the sequence and return a pair<> of BamRecord objects
   corresponding to the pair of reads. If the reads have been merged, the second object will be empty.
   It will also fix the BAM tags accordingly.
 
-  \param al BamAlignment object as input representing the first pair
-  \param al2 BamAlignment object as input representing the first pair
+  \param al BamRecord object as input representing the first pair
+  \param al2 BamRecord object as input representing the first pair
   \return True if the pair was merged and is contained within al only
 */
-//pair<BamAlignment,BamAlignment> MergeTrimReads::processPair(const BamAlignment & al,const BamAlignment & al2){
-bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
+//pair<BamRecord,BamRecord> MergeTrimReads::processPair(const BamRecord & al,const BamRecord & al2){
+bool MergeTrimReads::processPair( BamRecord & al, BamRecord & al2){
     //cerr<<len_key1<<" "<<len_key2<<" "<<al.QueryBases<<" "<<al2.QueryBases<<endl;
 
     string read1;
@@ -2537,7 +2969,7 @@ bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
     if(result.code != ' '){ //keys or chimeras
 	string prevZQ1="";
 	string prevZQ2="";
-	//	pair<BamAlignment,BamAlignment> toReturn (al,al2);
+	//	pair<BamRecord,BamRecord> toReturn (al,al2);
 
 	al.SetIsFailedQC(true);
 	al.GetTag("ZQ",prevZQ1);		    
@@ -2597,7 +3029,7 @@ bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
     //    cerr<<"new #"<<result.sequence<<"#"<<endl;
 
     if(result.sequence != ""){ //new sequence
-	//BamAlignment toWrite (al);//build from the previous one
+	//BamRecord toWrite (al);//build from the previous one
 	string towriteZQ="";
 	al.GetTag("ZQ",towriteZQ);   //get from the first one
 	// string towriteZQ2="";
@@ -2709,8 +3141,8 @@ bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
 	// 	    writer.SaveAlignment(al2);
 	// 	    writer.SaveAlignment(al);
 	// 	}
-	// BamAlignment empty;
-	// return 	pair<BamAlignment,BamAlignment>(toWrite,empty);
+	// BamRecord empty;
+	// return 	pair<BamRecord,BamRecord>(toWrite,empty);
 	return true;
 	    
     }else{ //keep as is
@@ -2724,7 +3156,7 @@ bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
 	// 	}
 	//keep the sequences as pairs
 	
-	// return 	pair<BamAlignment,BamAlignment>(al,al2);
+	// return 	pair<BamRecord,BamRecord>(al,al2);
 
 
 	if(trimKey){
@@ -2763,10 +3195,10 @@ bool MergeTrimReads::processPair( BamAlignment & al, BamAlignment & al2){
   This subroutine will call process_SR() on the sequence and return a new BamALignment object
   corresponding to the potentially trimmed sequence.
   It will fix the BAM tags accordingly.
-  \param al BamAlignment object as input and that will be written out
-  \return The BamAlignment to be written
+  \param al BamRecord object as input and that will be written out
+  \return The BamRecord to be written
 */
-void MergeTrimReads::processSingle(BamAlignment & al){
+void MergeTrimReads::processSingle(BamRecord & al){
 
     string read1;
     string qual1;
@@ -2784,10 +3216,9 @@ void MergeTrimReads::processSingle(BamAlignment & al){
     // cerr<<qual1<<endl;
 
     merged result=process_SR(read1,qual1);
-    cerr<<"CODE "<<result.code<<endl;
     if(result.code != ' '){ //either chimera or missing key
 	string prevZQ1="";
-	//BamAlignment toWrite (al);//build from the previous one
+	//BamRecord toWrite (al);//build from the previous one
 
 	al.SetIsFailedQC(true);
 	al.GetTag("ZQ",prevZQ1);
@@ -2823,7 +3254,7 @@ void MergeTrimReads::processSingle(BamAlignment & al){
 
     if(result.sequence != ""){ //new sequence
 
-	///BamAlignment toWrite (al);//build from the previous al
+	///BamRecord toWrite (al);//build from the previous al
 	al.MapQuality=0;
 
 	al.QueryBases = result.sequence;

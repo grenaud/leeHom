@@ -1,21 +1,21 @@
 #src
-BAMTOOLS= $(realpath ../bamtools/)
+HTSLIB= $(abspath ../htslib)
 LIBGAB= $(realpath ../libgab/)
 
 
 #defined via user
-ifdef BAMTOOLSINC
-	BAMTOOLSINCAPI=${BAMTOOLSINC}
-	BAMTOOLSINCSHARED=${BAMTOOLSINC}
+ifdef HTSLIBINC
+	HTSLIBINCDIR=${HTSLIBINC}
 else
-	BAMTOOLSINCAPI=${BAMTOOLS}/build/src/
-	BAMTOOLSINCSHARED=${BAMTOOLS}/src/
+	HTSLIBINCDIR=${HTSLIB}
 endif
 
-ifdef BAMTOOLSLIB
-	BAMTOOLSLIBOBJ=${BAMTOOLSLIB}/libbamtools.a 
+ifdef HTSLIBLIB
+	HTSLIBLIBOBJ=-L${HTSLIBLIB} -lhts
+	HTSLIBDEP=
 else
-	BAMTOOLSLIBOBJ=${BAMTOOLS}/build/src/libbamtools.a 
+	HTSLIBLIBOBJ=${HTSLIB}/libhts.a
+	HTSLIBDEP=${HTSLIB}/libhts.a
 endif
 
 ifdef LIBGABINC
@@ -40,50 +40,55 @@ print-%: ; @echo $*=$($*)
 
 
 #CXX      = ${CXX}#g++   #-g -pg
-CXXFLAGS+= -O3 -Wall -Wno-char-subscripts -I${BAMTOOLSINCAPI} -I${BAMTOOLSINCSHARED}  -I${LIBGABINC} -I${LIBGABINC}/gzstream/  
+CXXFLAGS+= -O3 -ffp-contract=off -pthread -Wall -Wno-char-subscripts -I${HTSLIBINCDIR} -I${LIBGABINC} -I${LIBGABINC}/gzstream/  
 LDFLAGS+= -lm -lpthread -lz
 
-LDLIBS+=  ${BAMTOOLSLIBOBJ} ${LIBGABLIBOBJ} ${LIBGABLIB}/libgabbamtools.a  ${LIBGABLIB}/gzstream/libgzstream.a
+LDLIBS+=  ${LIBGABLIBOBJ} ${LIBGABLIB}/gzstream/libgzstream.a ${HTSLIBLIBOBJ}
 
-all:    ${BAMTOOLSLIBOBJ} ${LIBGABLIBOBJ} MergeTrimReads.o leeHom
+OBJS= leeHom.o MergeTrimReads.o Kernels.o BamRecord.o
+
+all:    ${HTSLIBDEP} ${LIBGABLIBOBJ} leeHom
 
 %.o: %.cpp
-	${CXX} -c ${CXXFLAGS} $^ 
+	${CXX} -c ${CXXFLAGS} $< 
+
+${OBJS}: MergeTrimReads.h Kernels.h BamRecord.h Pipeline.h
+leeHom.o: version.h
 
 version.h:
 	./get_version.sh
 
-leeHom: version.h leeHom.o  MergeTrimReads.o ${LIBGABLIBOBJ}
+leeHom: version.h ${OBJS} ${LIBGABLIBOBJ} ${HTSLIBDEP}
 	@echo "linking"
 	@echo ${LDLIBS}
 	@echo ${LDFLAGS}
-	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS) 
+	${CXX} -o $@ ${OBJS} $(LDLIBS) $(LDFLAGS) 
 
-static: version.h leeHom.o  MergeTrimReads.o ${LIBGABLIBOBJ}
+static: version.h ${OBJS} ${LIBGABLIBOBJ} ${HTSLIBDEP}
 	@echo "staic linking"
 	@echo ${LDLIBS}
 	@echo ${LDFLAGS}
-	${CXX} -static -o leeHom $^ $(LDLIBS) $(LDFLAGS) 
+	${CXX} -static -o leeHom ${OBJS} $(LDLIBS) $(LDFLAGS) 
 
+
+# checks that the vectorized kernels give the same results as the original scalar code, see ../test/test.sh
+fuzz_kernels: ../test/fuzz_kernels.cpp MergeTrimReads.o Kernels.o BamRecord.o ${LIBGABLIBOBJ} ${HTSLIBDEP}
+	${CXX} ${CXXFLAGS} -I. -o $@ $< MergeTrimReads.o Kernels.o BamRecord.o $(LDLIBS) $(LDFLAGS)
 
 ${LIBGABINC}/libgab.h:
 	rm -rf ../libgab/
 	mkdir ../libgab/
 	git clone --recursive https://github.com/grenaud/libgab.git ../libgab/
 
-${LIBGABLIBOBJ}: ${BAMTOOLSLIBOBJ}  ${LIBGABINC}/libgab.h
+${LIBGABLIBOBJ}: ${LIBGABINC}/libgab.h
 	make -C ../libgab
 
-${BAMTOOLSINCAPI}/api/BamAlignment.h:
-	@echo ${BAMTOOLSINCAPI}/api/BamAlignment.h
-	@echo ${BAMTOOLSLIBOBJ}
-	rm -rf ../bamtools/
-	mkdir ../bamtools/
-	git clone --recursive https://github.com/pezmaster31/bamtools.git ../bamtools/ && cd ../bamtools/ #&& git reset --hard d24d850de17134fe4e7984b26493c5c0a1844b35
+# htslib is a submodule, it is built as a static library with only what is needed for BAM and gzip (no libcurl, bz2, lzma)
+${HTSLIB}/htslib/sam.h:
+	cd .. && (git submodule update --init --recursive htslib || git clone --recursive --branch 1.22.1 https://github.com/samtools/htslib.git htslib)
 
-${BAMTOOLSLIBOBJ}: ${BAMTOOLSINCAPI}/api/BamAlignment.h
-	cd ../bamtools/ &&  mkdir -p build/  && cd build/ && if cmake ..; then echo ""; else if cmake3 ..; then echo ""; else echo "cmake failed, please install cmake v3"; fi  fi  && make && cd ../..
+${HTSLIB}/libhts.a: ${HTSLIB}/htslib/sam.h
+	cd ../htslib && (test -f config.mk || (autoreconf -i && ./configure --disable-libcurl --disable-plugins --disable-bz2 --disable-lzma --disable-gcs --disable-s3)) && $(MAKE) libhts.a
 
 clean:
-	rm -f leeHom *.o
-
+	rm -f leeHom fuzz_kernels *.o
