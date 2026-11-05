@@ -3,7 +3,11 @@
 QUESTIONS: gabriel [dot] reno [ at sign ] gmail.com
 
 ## About
-leeHom is a program to trim adapters and merge overlapping sequencing using a Bayesian reconstruction. This is particularly useful for ancient DNA and or DNA shorter fragment sizes like cell-free DNA.
+leeHom trims adapters and merges overlapping paired-end reads with a single, fully Bayesian model: for every possible fragment length it computes the likelihood of the adapter, of the overlap between the mates (taking the quality score of every base into account) and of the length itself, and it reconstructs the fragment, and the quality of each base, from that posterior. We believe it is the most mathematically accurate way to do it, and the numbers agree: in the benchmark of seven trimming and merging tools by [Lien et al. (2023)](https://doi.org/10.3389/fbinf.2023.1260486), leeHom's merging "outperforms the other approaches", correctly merges nearly all overlapping pairs even at high sequencing error rates, introduces few false merges and computes the most statistically correct Phred scores for the merged bases. It is particularly useful for ancient DNA and for other short fragments such as cell-free DNA.
+
+The one aspect in which that study ranked leeHom behind was run time. This version computes exactly the same likelihoods, bit for bit, but it is vectorized (AVX2), multi-threaded (with the output in the order of the input) and reads and writes BAM through htslib, so it is faster, up to 6.5 times in our tests (see [Running faster](#running-faster)).
+
+Please cite: Renaud G, Stenzel U, Kelso J. leeHom: adaptor trimming and merging for Illumina sequencing reads. *Nucleic Acids Research* 2014, [doi:10.1093/nar/gku699](https://doi.org/10.1093/nar/gku699).
 
 
 ## Downloading:
@@ -34,6 +38,15 @@ src/leeHom
 - `-t [threads]` uses several cores. The output is the same, and in the same order as the input, whatever the number of threads (use `--seed` to also fix the random choice between equally good bases).
 - `--quick` makes the most expensive step faster, at the price of a very small loss in sensitivity. leeHom compares every possible position of the adapter, and for each one it adds the log likelihood of every pair of overlapping bases. With `--quick`, once a position has compared its first `--quickbases` bases (default 12) it is only computed in full if the likelihood reached so far is clearly better than what random sequences would give. Otherwise the remaining terms are added as their expected value under random sequences (3/4 mismatches, 1/4 matches), so the number of terms of the likelihood is unchanged. `--quickfraction [0-1]` sets how far between the likelihood of random sequences (0) and of a perfect overlap (1) a position must be at that point (default 0.4).
   `--quick` only speeds up the likelihood computation, and the gain is modest: on simulated 75 bp reads (1M pairs, one thread, output not compressed) the defaults are 5 to 7% faster, `--quickbases 12 --quickfraction 0.5` about 10% faster (about 0.1% of the merged pairs are kept as pairs instead), and the most aggressive settings (about 25%) lose over 10% of the merges. A `--quickfraction` of 0, the literal "below what random sequences give" rule, is slower than not using `--quick`. Larger `--quickbases` or smaller `--quickfraction` are more cautious and give less speedup.
+- Compared with the previous version (default settings, no `--quick`, 1M simulated read pairs for fastq and 300k pairs for BAM, a 4-core machine), the run time (s) is:
+
+  | input | threads | previous | this version | this version, `--gzlevel 1` |
+  |---|---|---|---|---|
+  | simulated ancient DNA, fastq | 1 / 2 / 4 | 56 / 30 / 25 | 31 / 16 / 8.8 | 18 / 9.2 / 5.4 |
+  | simulated cell-free DNA, fastq | 1 / 2 / 4 | 55 / 48 / 49 | 56 / 28 / 16 | 20 / 11 / 6.1 |
+  | ancient DNA test data, BAM | 1 / 2 / 4 | 41 / 15 / 11 | 6.3 / 3.5 / 3.4 | |
+
+  The merge/trim/keep decisions are identical. With fastq output the time is dominated by compressing the output, hence `--gzlevel` below. When two mates disagree at a base with equal quality leeHom picks one at random: this choice is now seeded per read so it does not depend on the number of threads, set `LEEHOM_LEGACY_RNG=1` to get the exact choices of the previous version at `-t 1`.
 - `--gzlevel [0-9]` sets the compression level of the output (fastq or BAM). When most reads are written compressed, compression is often more than half of the CPU time: `--gzlevel 1` is much faster than the default (6 for fastq) for files about 20% bigger.
 
 ## Fastq input, BAM output
