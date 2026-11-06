@@ -88,7 +88,7 @@ ${HTSLIB}/htslib/sam.h:
 	cd .. && (git submodule update --init --recursive htslib || git clone --recursive --branch 1.22.1 https://github.com/samtools/htslib.git htslib)
 
 ${HTSLIB}/libhts.a: ${HTSLIB}/htslib/sam.h
-	cd ../htslib && (test -f config.mk || (autoreconf -i && ./configure --disable-libcurl --disable-plugins --disable-bz2 --disable-lzma --disable-gcs --disable-s3)) && $(MAKE) libhts.a
+	cd ../htslib && (test -f config.mk || (autoreconf -i && ./configure --disable-libcurl --disable-plugins --disable-bz2 --disable-lzma --disable-gcs --disable-s3 --without-libdeflate)) && $(MAKE) libhts.a
 
 clean:
 	rm -f leeHom fuzz_kernels *.o
