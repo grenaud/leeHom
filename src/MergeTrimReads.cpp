@@ -3036,9 +3036,11 @@ bool MergeTrimReads::processPair( BamRecord & al, BamRecord & al2){
 	// al2.GetTag("ZQ",towriteZQ2);  //get from the first one
 
 
+	//the flag has to be read before it is reset, otherwise the QC failed flag of the input is always lost
+	const bool bothFailedQC = al.IsFailedQC() && al2.IsFailedQC();
 	al.AlignmentFlag=4; 	//not failed
-	
-	al.SetIsFailedQC( al.IsFailedQC() && al2.IsFailedQC() ); //fail the new one if both fail 
+
+	al.SetIsFailedQC( bothFailedQC ); //fail the new one if both fail
 	
 	al.Position    = -1;
 	al.MapQuality  =  0;

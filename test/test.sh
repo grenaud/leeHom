@@ -231,3 +231,134 @@ else
     exit 1
 fi
 fi
+
+
+###############################################################################
+# Fastq in, one BAM (or uncompressed BAM) out: --keepOrig and the QC failed flag
+# These use src/bamview (built by make test) and not samtools.
+###############################################################################
+if [ ! -x ../src/bamview ]
+then
+    echo "src/bamview not found (make -C src bamview), skipping the fastq to BAM, keepOrig and QC fail tests"
+else
+BV=../src/bamview
+ADP="-f AGATCGGAAGAGCACACGTCTGAACTCCAG -s GGAAGAGCGTCGTGTAGGGAAAGAGTGTAG"
+
+# Illumina (Casava >= 1.8) style headers: every 3rd cluster is flagged as filtered (1:Y:), the others pass (1:N:)
+for n in 1 2
+do
+    zcat ../testData/rawAncientDNA.f$n.gz | head -n 4000 | awk -v n=$n 'NR%4==1 {r++; sub(/\/[12]$/,""); $0=$0" "n":"((r%3==0)?"Y":"N")":0:ACGT"} {print}' | gzip > qc.f$n.fq.gz
+done
+# names of the filtered clusters and the original reads (name sequence quality) of read 1 and read 2
+zcat qc.f1.fq.gz | awk 'NR%4==1 {n=substr($1,2); f[n]=($2 ~ /^[12]:Y:/)} END{for(n in f) print n, f[n]}' | sort > qc.filtered.txt
+{ zcat qc.f1.fq.gz | awk 'NR%4==1{n=substr($1,2)} NR%4==2{s=$1} NR%4==0{print n"\t"s"\t"$1}';
+  zcat qc.f2.fq.gz | awk 'NR%4==1{n=substr($1,2)} NR%4==2{s=$1} NR%4==0{print n"\t"s"\t"$1}'; } | sort > qc.input.txt
+
+echo -n "Running fastq input to BAM and uncompressed BAM, one output file, 1 and 4 threads:"
+../src/leeHom --seed 7 --ancientdna $ADP -t 1 -o qc1.bam   -fq1 qc.f1.fq.gz -fq2 qc.f2.fq.gz 2> qc1.log
+../src/leeHom --seed 7 --ancientdna $ADP -t 4 -z 100 -u    -fq1 qc.f1.fq.gz -fq2 qc.f2.fq.gz > qc4.bam 2> qc4.log
+echo -e " ${GREEN}ok${NC}"
+
+echo -n "testing that the BAM output is identical for 1 and 4 threads, compressed or not:"
+if [ "$($BV qc1.bam | md5sum)" == "$($BV qc4.bam | md5sum)" ] && [ "$($BV qc1.bam | wc -l)" -gt 0 ] && diff qc1.log qc4.log > /dev/null
+then
+    echo -e " ${GREEN}test passed${NC}"
+else
+    echo -e " ${RED}test failed${NC}"
+    exit 1
+fi
+
+echo -n "testing that -u really gives an uncompressed BAM:"
+# stored (level 0) BGZF blocks are larger than the deflated blocks of the same records
+if [ "$(stat -c %s qc4.bam)" -gt "$(stat -c %s qc1.bam)" ]
+then
+    echo -e " ${GREEN}test passed${NC}"
+else
+    echo -e " ${RED}test failed${NC}"
+    exit 1
+fi
+
+echo -n "testing that the QC failed flag (0x200) of the fastq header (1:Y:) is carried to the BAM, for merged and unmerged reads:"
+# every record of a filtered cluster must be QC failed, and the others must not all be (leeHom fails some of them itself)
+if $BV qc1.bam | awk 'NR==FNR {filt[$1]=$2; next} {n=$1; sub(/_M$/,"",n); fail=int($2/512)%2; if(filt[n]==1 && !fail) bad++; if(filt[n]==0 && !fail) pass++; if(filt[n]==1 && ($2%2==0)) mergedfilt++} END{exit (bad>0 || pass==0 || mergedfilt==0)}' qc.filtered.txt -
+then
+    echo -e " ${GREEN}test passed${NC}"
+else
+    echo -e " ${RED}test failed${NC}"
+    exit 1
+fi
+
+echo -n "Running fastq input to BAM with --keepOrig:"
+../src/leeHom --seed 7 --ancientdna $ADP --keepOrig -t 3 -z 100 -o qk.bam -fq1 qc.f1.fq.gz -fq2 qc.f2.fq.gz 2> qk.log
+echo -e " ${GREEN}ok${NC}"
+
+echo -n "testing that --keepOrig only adds the original reads (duplicate flag) and the _M suffix to the merged reads:"
+# without the originals (0x400) and the suffix, the records are those of the run without --keepOrig
+if [ "$($BV qk.bam | awk -F'\t' -v OFS='\t' '{if(int($2/1024)%2==0){sub(/_M$/,"",$1); print}}' | md5sum)" == "$($BV qc1.bam | md5sum)" ] &&
+   [ "$($BV qk.bam | awk 'int($2/1024)%2==1' | wc -l)" -gt 0 ]
+then
+    echo -e " ${GREEN}test passed${NC}"
+else
+    echo -e " ${RED}test failed${NC}"
+    exit 1
+fi
+
+echo -n "testing that each merged read has both original reads, unchanged, with the QC failed flag of the input:"
+ok=1
+# 2 originals per merged read (the merged reads are the unpaired records)
+merged=$($BV qk.bam | awk '$2%2==0' | wc -l)
+origs=$($BV qk.bam | awk 'int($2/1024)%2==1' | wc -l)
+[ "$origs" == "$((2*merged))" ] || ok=0
+# the originals are the input reads (name, sequence, qualities), mate 1 (0x40) and mate 2 (0x80) are both there
+[ "$($BV qk.bam | awk 'int($2/1024)%2==1 && int($2/64)%2==1' | wc -l)" == "$merged" ] || ok=0
+[ "$($BV qk.bam | awk 'int($2/1024)%2==1 && int($2/128)%2==1' | wc -l)" == "$merged" ] || ok=0
+$BV qk.bam | awk 'int($2/1024)%2==1 {print $1"\t"$3"\t"$4}' | sort > qk.origs.txt
+[ "$(comm -23 qk.origs.txt qc.input.txt | wc -l)" == 0 ] || ok=0
+# the flags: originals of a filtered cluster are QC failed, the others are not
+$BV qk.bam | awk 'NR==FNR {filt[$1]=$2; next} int($2/1024)%2==1 {fail=int($2/512)%2; if(fail != filt[$1]) bad++} END{exit bad>0}' qc.filtered.txt - || ok=0
+if [ $ok == 1 ]
+then
+    echo -e " ${GREEN}test passed${NC}"
+else
+    echo -e " ${RED}test failed${NC}"
+    exit 1
+fi
+
+echo -n "Running single-end fastq input to BAM and to uncompressed BAM, with and without --keepOrig:"
+../src/leeHom --seed 7 --ancientdna $ADP -t 1 -o qs1.bam -fq1 qc.f1.fq.gz 2> qs1.log
+../src/leeHom --seed 7 --ancientdna $ADP -t 4 -z 100 -u   -fq1 qc.f1.fq.gz > qs4.bam 2> qs4.log
+../src/leeHom --seed 7 --ancientdna $ADP --keepOrig -t 4 -z 100 -o qsk.bam -fq1 qc.f1.fq.gz 2> qsk.log
+echo -e " ${GREEN}ok${NC}"
+
+echo -n "testing the single-end BAM: same for 1 and 4 threads, QC failed flag carried, one record per read:"
+ok=1
+[ "$($BV qs1.bam | md5sum)" == "$($BV qs4.bam | md5sum)" ] || ok=0
+[ "$($BV qs1.bam | wc -l)" == "$(zcat qc.f1.fq.gz | awk 'NR%4==1' | wc -l)" ] || ok=0
+$BV qs1.bam | awk 'NR==FNR {filt[$1]=$2; next} {fail=int($2/512)%2; if(filt[$1]==1 && !fail) bad++; if(filt[$1]==0 && !fail) pass++} END{exit (bad>0 || pass==0)}' qc.filtered.txt - || ok=0
+if [ $ok == 1 ]
+then
+    echo -e " ${GREEN}test passed${NC}"
+else
+    echo -e " ${RED}test failed${NC}"
+    exit 1
+fi
+
+echo -n "testing --keepOrig with single-end reads: originals only for the changed reads, which get the _M suffix, QC failed flag carried:"
+ok=1
+[ "$($BV qsk.bam | awk -F'\t' -v OFS='\t' '{if(int($2/1024)%2==0){sub(/_M$/,"",$1); print}}' | md5sum)" == "$($BV qs1.bam | md5sum)" ] || ok=0
+nm=$($BV qsk.bam | awk '$1 ~ /_M$/' | wc -l)
+no=$($BV qsk.bam | awk 'int($2/1024)%2==1' | wc -l)
+[ "$nm" == "$no" ] && [ "$no" -gt 0 ] || ok=0
+# reads that are not marked as changed have no _M, and the originals are the input reads
+[ "$($BV qsk.bam | awk '$1 !~ /_M$/ && int($2/1024)%2==0' | wc -l)" == "$(( $($BV qs1.bam | wc -l) - nm ))" ] || ok=0
+$BV qsk.bam | awk 'int($2/1024)%2==1 {print $1"\t"$3"\t"$4}' | sort > qsk.origs.txt
+[ "$(comm -23 qsk.origs.txt qc.input.txt | wc -l)" == 0 ] || ok=0
+$BV qsk.bam | awk 'NR==FNR {filt[$1]=$2; next} int($2/1024)%2==1 {fail=int($2/512)%2; if(fail != filt[$1]) bad++} END{exit bad>0}' qc.filtered.txt - || ok=0
+if [ $ok == 1 ]
+then
+    echo -e " ${GREEN}test passed${NC}"
+else
+    echo -e " ${RED}test failed${NC}"
+    exit 1
+fi
+fi

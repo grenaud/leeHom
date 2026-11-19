@@ -54,6 +54,8 @@ With fastq input, `-o [file]` (or `-u` for an uncompressed BAM on standard outpu
 ```
 src/leeHom --ancientdna -fq1 reads_1.fq.gz -fq2 reads_2.fq.gz -t 4 -u | samtools sort -o sorted.bam -
 ```
+- **QC failed**: a read whose Illumina (Casava >= 1.8) header is flagged as filtered (`@name 1:Y:0:ACGT`) gets the QC failed flag (0x200) in the BAM. The same flag is also set by leeHom for chimeras, missing adapters and merged reads shorter than 5 bases. A merged read is QC failed if both mates were (as for BAM input).
+- **`--keepOrig`** works with fastq input: for every merged read (name suffixed with `_M`) the two original reads are written after it with the duplicate flag (0x400), and for single reads the original is written after a trimmed read (also suffixed `_M`). Reads that were not changed are written as is, without suffix. The originals keep the QC failed flag of the input.
 
 ## Interpreting the output using the fastq mode
 If the input is fastq, the output will also be fastq. Normally you will get different files. Here is a table explaining their meaning/content. The **[PREFIX]** is the output prefix specified using -fqo.

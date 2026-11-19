@@ -75,6 +75,10 @@ static: version.h ${OBJS} ${LIBGABLIBOBJ} ${HTSLIBDEP}
 fuzz_kernels: ../test/fuzz_kernels.cpp MergeTrimReads.o Kernels.o BamRecord.o ${LIBGABLIBOBJ} ${HTSLIBDEP}
 	${CXX} ${CXXFLAGS} -I. -o $@ $< MergeTrimReads.o Kernels.o BamRecord.o $(LDLIBS) $(LDFLAGS)
 
+# prints the records of a BAM file, used by ../test/test.sh (no samtools needed)
+bamview: ../test/bamview.cpp ${HTSLIBDEP}
+	${CXX} ${CXXFLAGS} -o $@ $< $(LDLIBS) $(LDFLAGS)
+
 ${LIBGABINC}/libgab.h:
 	rm -rf ../libgab/
 	mkdir ../libgab/
@@ -91,4 +95,4 @@ ${HTSLIB}/libhts.a: ${HTSLIB}/htslib/sam.h
 	cd ../htslib && (test -f config.mk || (autoreconf -i && ./configure --disable-libcurl --disable-plugins --disable-bz2 --disable-lzma --disable-gcs --disable-s3 --without-libdeflate)) && $(MAKE) libhts.a
 
 clean:
-	rm -f leeHom fuzz_kernels *.o
+	rm -f leeHom fuzz_kernels bamview *.o

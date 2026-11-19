@@ -495,16 +495,16 @@ static BamChunk * processBamChunk(MergeTrimReads * m, const Settings & S, const 
 
 		if(keepOrig){
 		    orig =al;
-		    al.Name = al.Name+"_M";
 		}
-		unsigned int orgL=al.QueryBases.length();		
+		unsigned int orgL=al.QueryBases.length();
 		m->setRandomContext(in.firstRecord + i);
 		m->processSingle(al);
 		unsigned int newL=al.QueryBases.length();
-				
+
 		if(keepOrig){
-		    //write duplicate
+		    //write duplicate, only reads that were changed have an original (and the _M suffix to tell them apart)
 		    if(orgL  != newL){
+			al.Name = al.Name+"_M";
 			orig.SetIsDuplicate(true);
 			emit(orig);
 		    }
@@ -1008,12 +1008,25 @@ static void bamWriterLoop(BamPipeline * pipe, samFile * fpOut, sam_hdr_t * hdrOu
 }
 
 
+//! True if the fastq header carries the Illumina (Casava >= 1.8) "filtered" flag, e.g. "@name 1:Y:0:ACGT"
+static bool fastqHeaderIsFiltered(const vector<string> & tokens){
+    if(tokens.size() < 2)
+	return false;
+    const string & c = tokens[1];     //<read>:<Y|N>:<control bits>:<index>
+    size_t i=0;
+    while(i<c.size() && c[i]>='0' && c[i]<='9')
+	i++;
+    return i>0 && (c.compare(i, string::npos, ":Y") == 0 || c.compare(i, 3, ":Y:") == 0);
+}
+
 //! Reads the next record (a pair, or a single read) from the fastq files. Returns 0, or 1 if the files do not match.
 static int nextFqRecord(FastQParser * fqp1, FastQParser * fqp2, bool singleEndModeFQ, fqrecord & fqtoadd){
 	    FastQObj * fo1=fqp1->getData();
 	    vector<string> def1=allTokens( *(fo1->getID()), ' '  );
 	    string def1s=def1[0];
-	
+	    fqtoadd.qcfail1 = fastqHeaderIsFiltered(def1);
+	    fqtoadd.qcfail2 = false;
+
 
 	    FastQObj * fo2;
 	    string def2s;
@@ -1028,6 +1041,7 @@ static int nextFqRecord(FastQParser * fqp1, FastQParser * fqp2, bool singleEndMo
 		fo2=fqp2->getData();
 		vector<string> def2=allTokens( *(fo2->getID()), ' ' );
 		def2s=def2[0];
+		fqtoadd.qcfail2 = fastqHeaderIsFiltered(def2);
 
 
 		if(strEndsWith(def1s,"/1")){
@@ -1190,11 +1204,11 @@ static int runBam(Settings & S, int argc, char * argv[]){
 	if(nextFqRecord(fqp1, fqp2, S.singleEndModeFQ, r) != 0)
 	    exit(1);
 	if(r.paired){
-	    fastqToBamRecord(b, r.d1, r.s1, r.q1, BAM_FPAIRED|BAM_FUNMAP|BAM_FMUNMAP|BAM_FREAD1, S.fqQualOffset);
+	    fastqToBamRecord(b, r.d1, r.s1, r.q1, BAM_FPAIRED|BAM_FUNMAP|BAM_FMUNMAP|BAM_FREAD1|(r.qcfail1?BAM_FQCFAIL:0), S.fqQualOffset);
 	    pendingMate = bam_init1();
-	    fastqToBamRecord(pendingMate, r.d2, r.s2, r.q2, BAM_FPAIRED|BAM_FUNMAP|BAM_FMUNMAP|BAM_FREAD2, S.fqQualOffset);
+	    fastqToBamRecord(pendingMate, r.d2, r.s2, r.q2, BAM_FPAIRED|BAM_FUNMAP|BAM_FMUNMAP|BAM_FREAD2|(r.qcfail2?BAM_FQCFAIL:0), S.fqQualOffset);
 	}else{
-	    fastqToBamRecord(b, r.d1, r.s1, r.q1, BAM_FUNMAP, S.fqQualOffset);
+	    fastqToBamRecord(b, r.d1, r.s1, r.q1, BAM_FUNMAP|(r.qcfail1?BAM_FQCFAIL:0), S.fqQualOffset);
 	}
 	return 1;
     };

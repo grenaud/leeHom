@@ -45,7 +45,7 @@ clean:
 	make -C src clean
 
 test:   all
-	make  CXX="${CXX}" ${PASSVARIABLES}  -C src fuzz_kernels
+	make  CXX="${CXX}" ${PASSVARIABLES}  -C src fuzz_kernels bamview
 	cd test/ && bash test.sh && cd ..
 
 .PHONY: all

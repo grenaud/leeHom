@@ -51,9 +51,14 @@ class fqrecord{
     string s2;
     string q2;
     string cmt;
-    
+
 
     bool paired;
+    //the read was flagged as filtered (QC failed) by the sequencer, "1:Y:..." in the fastq header
+    bool qcfail1;
+    bool qcfail2;
+
+    fqrecord():paired(false),qcfail1(false),qcfail2(false){}
 };
 
 class MergeTrimReads{
